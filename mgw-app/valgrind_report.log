@@ -1,0 +1,86 @@
+==48891== Memcheck, a memory error detector
+==48891== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==48891== Using Valgrind-3.17.0 and LibVEX; rerun with -h for copyright info
+==48891== Command: ./app.out
+==48891== Parent PID: 43225
+==48891== 
+==48891== Conditional jump or move depends on uninitialised value(s)
+==48891==    at 0x588CC4D: dstr_ensure_capacity (dstr.h:225)
+==48891==    by 0x588D883: dstr_copy (dstr.c:355)
+==48891==    by 0x5678A6B: mgw_rb_create (ring-buffer.c:88)
+==48891==    by 0x546F97B: mgw_source_init (mgw-source.c:138)
+==48891==    by 0x546FC2D: mgw_source_create_internal (mgw-source.c:185)
+==48891==    by 0x546FD6C: mgw_source_create_private (mgw-source.c:214)
+==48891==    by 0x401A12: app_stream_add_source_internal (mgw-basic.c:68)
+==48891==    by 0x401B96: app_stream_add_private_source (mgw-basic.c:103)
+==48891==    by 0x4016CD: main (mgw-app.c:44)
+==48891==  Uninitialised value was created by a stack allocation
+==48891==    at 0x5678812: mgw_rb_create (ring-buffer.c:44)
+==48891== 
+==48891== Conditional jump or move depends on uninitialised value(s)
+==48891==    at 0x588CC5C: dstr_ensure_capacity (dstr.h:228)
+==48891==    by 0x588D883: dstr_copy (dstr.c:355)
+==48891==    by 0x5678A6B: mgw_rb_create (ring-buffer.c:88)
+==48891==    by 0x546F97B: mgw_source_init (mgw-source.c:138)
+==48891==    by 0x546FC2D: mgw_source_create_internal (mgw-source.c:185)
+==48891==    by 0x546FD6C: mgw_source_create_private (mgw-source.c:214)
+==48891==    by 0x401A12: app_stream_add_source_internal (mgw-basic.c:68)
+==48891==    by 0x401B96: app_stream_add_private_source (mgw-basic.c:103)
+==48891==    by 0x4016CD: main (mgw-app.c:44)
+==48891==  Uninitialised value was created by a stack allocation
+==48891==    at 0x5678812: mgw_rb_create (ring-buffer.c:44)
+==48891== 
+==48891== Conditional jump or move depends on uninitialised value(s)
+==48891==    at 0x4C2F93D: realloc (vg_replace_malloc.c:1192)
+==48891==    by 0x588B962: brealloc (bmem.c:28)
+==48891==    by 0x588CC9A: dstr_ensure_capacity (dstr.h:231)
+==48891==    by 0x588D883: dstr_copy (dstr.c:355)
+==48891==    by 0x5678A6B: mgw_rb_create (ring-buffer.c:88)
+==48891==    by 0x546F97B: mgw_source_init (mgw-source.c:138)
+==48891==    by 0x546FC2D: mgw_source_create_internal (mgw-source.c:185)
+==48891==    by 0x546FD6C: mgw_source_create_private (mgw-source.c:214)
+==48891==    by 0x401A12: app_stream_add_source_internal (mgw-basic.c:68)
+==48891==    by 0x401B96: app_stream_add_private_source (mgw-basic.c:103)
+==48891==    by 0x4016CD: main (mgw-app.c:44)
+==48891==  Uninitialised value was created by a stack allocation
+==48891==    at 0x5678815: mgw_rb_create (ring-buffer.c:44)
+==48891== 
+==48891== Conditional jump or move depends on uninitialised value(s)
+==48891==    at 0x567AB6E: DefaultStreamSortBuff (stream_sort.c:98)
+==48891==    by 0x567AC79: pCreateStreamSort (stream_sort.c:125)
+==48891==    by 0x5678A94: mgw_rb_create (ring-buffer.c:91)
+==48891==    by 0x546F97B: mgw_source_init (mgw-source.c:138)
+==48891==    by 0x546FC2D: mgw_source_create_internal (mgw-source.c:185)
+==48891==    by 0x546FD6C: mgw_source_create_private (mgw-source.c:214)
+==48891==    by 0x401A12: app_stream_add_source_internal (mgw-basic.c:68)
+==48891==    by 0x401B96: app_stream_add_private_source (mgw-basic.c:103)
+==48891==    by 0x4016CD: main (mgw-app.c:44)
+==48891==  Uninitialised value was created by a stack allocation
+==48891==    at 0x5678815: mgw_rb_create (ring-buffer.c:44)
+==48891== 
+==48891== 
+==48891== HEAP SUMMARY:
+==48891==     in use at exit: 2,516,730 bytes in 1,591 blocks
+==48891==   total heap usage: 2,723 allocs, 1,132 frees, 12,289,196 bytes allocated
+==48891== 
+==48891== 1,248 bytes in 2 blocks are possibly lost in loss record 100 of 113
+==48891==    at 0x4C2F778: calloc (vg_replace_malloc.c:1117)
+==48891==    by 0x40126B4: _dl_allocate_tls (in /usr/lib64/ld-2.17.so)
+==48891==    by 0xA76D7AB: pthread_create@@GLIBC_2.2.5 (in /usr/lib64/libpthread-2.17.so)
+==48891==    by 0x4E43297: init_send (rtmp-stream.c:462)
+==48891==    by 0x4E43847: try_connect (rtmp-stream.c:569)
+==48891==    by 0x4E438B9: connect_thread (rtmp-stream.c:584)
+==48891==    by 0xA76CDD4: start_thread (in /usr/lib64/libpthread-2.17.so)
+==48891==    by 0xB333EAC: clone (in /usr/lib64/libc-2.17.so)
+==48891== 
+==48891== LEAK SUMMARY:
+==48891==    definitely lost: 0 bytes in 0 blocks
+==48891==    indirectly lost: 0 bytes in 0 blocks
+==48891==      possibly lost: 1,248 bytes in 2 blocks
+==48891==    still reachable: 2,515,482 bytes in 1,589 blocks
+==48891==         suppressed: 0 bytes in 0 blocks
+==48891== Reachable blocks (those to which a pointer was found) are not shown.
+==48891== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==48891== 
+==48891== For lists of detected and suppressed errors, rerun with: -s
+==48891== ERROR SUMMARY: 6 errors from 5 contexts (suppressed: 0 from 0)

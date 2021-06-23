@@ -1,0 +1,9 @@
+{
+    "name": "mgw-config",
+    "devices": [
+        {
+            "type": "Q8",
+            "SN": "JovialYoungDeviceMgw"
+        }
+    ]
+}

@@ -1,0 +1,11 @@
+{
+    "channel": 1,
+    "id": "output1",
+    "active": true,
+    "protocol":"rtmp",
+    "path":"rtmp://192.168.0.16/live",
+    "key":"stream1",
+    "username":"",
+    "password":"",
+    "dest_ip": ""
+}

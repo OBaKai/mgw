@@ -1,0 +1,255 @@
+#include "ring-buffer.h"
+#include "stream_buff.h"
+#include "stream_sort.h"
+
+#include "util/dstr.h"
+#include "util/threading.h"
+#include "util/base.h"
+
+/** Set ring buffer to 10M Bytes by default */
+#define RING_BUFFER_SIZE_DEF        10*1024*1024
+/** Set ring buffer to 30 frames by default */
+#define RING_BUFFER_CAP_DEF         30
+/** Set ring buffer max frame size for getting */
+#define RING_BUFFER_MAX_FRAMESIZE   500*1024
+
+struct ring_buffer {
+	bool            sort;
+	volatile long   ref;
+	BuffContext     *bc;
+	mgw_data_t      *settings;
+	void            *sort_list;
+};
+
+mgw_data_t *mgw_rb_get_default(void)
+{
+    mgw_data_t *setting = mgw_data_create();
+
+    mgw_data_set_default_bool(setting, "sort", true);
+    mgw_data_set_default_bool(setting, "shared_mem", false);
+    mgw_data_set_default_bool(setting, "read_by_time", false);
+    mgw_data_set_default_int(setting, "mem_size", RING_BUFFER_SIZE_DEF);
+    mgw_data_set_default_int(setting, "capacity", RING_BUFFER_CAP_DEF);
+
+    return setting;
+}
+
+static int datacallback(void *puser, sc_sortframe *oframe)
+{
+	return PutOneFrameToBuff((BuffContext *)puser, oframe->frame, \
+            oframe->frame_len, oframe->timestamp, oframe->frametype);
+}
+
+void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
+{
+    struct ring_buffer *rb = bmalloc(sizeof(struct ring_buffer));
+    rb->settings = settings;
+
+    if (!settings)
+        rb->settings = mgw_rb_get_default();
+
+    io_mode_t io;
+    const char *io_m = mgw_data_get_string(rb->settings, "io_mode");
+    if (0 == strcmp(io_m, "read"))
+        io = IO_MODE_READ;
+    else if (0 == strcmp(io_m, "write"))
+        io = IO_MODE_WRITE;
+
+    rb->sort = mgw_data_get_bool(rb->settings, "sort");
+    size_t min_delay = mgw_data_get_int(rb->settings, "min_delay");
+    size_t max_delay = mgw_data_get_int(rb->settings, "max_delay");
+    const char *name = mgw_data_get_string(rb->settings, "name");
+    const char *id = mgw_data_get_string(rb->settings, "id");
+
+    rb->bc = CreateStreamBuff(mgw_data_get_int(rb->settings, "mem_size"),
+                            name,id,
+                            mgw_data_get_int(rb->settings, "capacity"),
+                            mgw_data_get_bool(rb->settings, "shared_mem"),
+                            io,
+                            mgw_data_get_bool(rb->settings, "read_by_time"),
+                            (void *)param);
+    if (!rb->bc)
+        goto error;
+
+    /* as source writer, create the sort list if enable sort */
+    if (IO_MODE_WRITE == io && rb->sort) {
+        RegisterSortInfo info;
+        info.Datacallback = datacallback;
+        info.puser = rb->bc;
+        info.uiSize = SORT_SIZE_DEF;
+        if (min_delay > 0)
+            info.uiSortTime = min_delay;
+        else
+            info.uiSortTime = SORT_TIME_DEF;
+
+        if (max_delay > 0)
+            info.uiMaxSortTime = max_delay;
+
+        dstr_copy(&info.name, name);
+        dstr_copy(&info.userid, id);
+
+        rb->sort_list = pCreateStreamSort(&info);
+		dstr_free(&info.name);
+		dstr_free(&info.userid);
+
+        if (!rb->sort_list)
+            goto error;
+    }
+
+    return rb;
+error:
+    mgw_rb_destroy(rb);
+    return NULL;
+}
+
+struct source_param *mgw_rb_get_source_param(void *data)
+{
+    struct ring_buffer *rb = data;
+	SmemoryHead *shared_head = NULL;
+
+	if (!rb || !rb->bc->position.pstuHead)
+		return NULL;
+
+	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
+    return (struct source_param *)shared_head->priv_data;
+}
+
+void mgw_rb_destroy(void *data)
+{
+    struct ring_buffer *rb = data;
+
+    if (!data)
+        return;
+
+    if (rb->settings)
+        mgw_data_release(rb->settings);
+
+    if (rb->sort && rb->sort_list)
+        DelectStreamSort(rb->sort_list);
+
+    if (rb->bc)
+        DeleteStreamBuff(rb->bc);
+}
+
+void mgw_rb_addref(void *data)
+{
+
+}
+
+void mgw_rb_release(void *data)
+{
+
+}
+
+size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet)
+{
+    struct ring_buffer *rb = data;
+    size_t write_size = 0;
+    if (!rb || !packet)
+        return -1;
+
+    frame_t frame_type;
+    if (ENCODER_VIDEO == packet->type) {
+        if (packet->keyframe)
+            frame_type = FRAME_I;
+        else
+            frame_type = FRAME_P;
+    } else if (ENCODER_AUDIO == packet->type) {
+        frame_type = FRAME_AAC;
+    }
+
+    if (rb->sort) {
+        sc_sortframe iframe = {};
+		iframe.frametype = frame_type;
+		iframe.frame_len = packet->size;
+		iframe.timestamp = packet->pts;
+		iframe.frame = packet->data;
+		write_size = PutFrameStreamSort(&rb->sort_list, &iframe);
+    } else {
+        write_size = PutOneFrameToBuff(rb->bc, packet->data, \
+                packet->size, packet->pts, frame_type);
+    }
+    return write_size;
+}
+
+size_t mgw_rb_read_packet(void *data, struct encoder_packet *packet)
+{
+struct ring_buffer *rb = data;
+    size_t read_size = 0;
+    if (!data || !packet)
+        return -1;
+
+    if (IO_MODE_WRITE == rb->bc->mode)
+        return -1;
+    frame_t frame_type = FRAME_UNKNOWN;
+    read_size = GetOneFrameFromBuff(rb->bc, (char **)&packet->data, RING_BUFFER_MAX_FRAMESIZE, \
+            (unsigned long long *)&packet->pts, &frame_type);
+
+    if (FRAME_AAC == frame_type)
+        packet->type = ENCODER_AUDIO;
+    else
+        packet->type = ENCODER_VIDEO;
+
+    if (FRAME_I || FRAME_IDR)
+        packet->keyframe = true;
+
+    packet->size = read_size;
+    return read_size;
+}
+
+mgw_data_t *mgw_rb_get_encoder_settings(void *data)
+{
+	struct ring_buffer *rb = data;
+	SmemoryHead *shared_head = NULL;
+	struct source_param *param = NULL;
+
+	if (!rb)
+		return NULL;
+
+	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
+	param = shared_head->priv_data;
+	if (!param || !param->source_settings){
+		blog(LOG_INFO, "Tried to get encoder settings but source is NULL\n");
+		return NULL;
+	}
+
+	return param->source_settings(param->source);
+}
+
+size_t mgw_rb_get_video_header(void *data, uint8_t **header)
+{
+	struct ring_buffer *rb = data;
+	SmemoryHead *shared_head;
+	struct source_param *param;
+
+	if (!rb || !header)
+		return 0;
+
+	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
+    param = shared_head->priv_data;
+	if (!param || !param->video_header) {
+        blog(LOG_INFO, "Tried to get encoder video header but source is NULL\n");
+        return 0;
+    }
+
+	return param->video_header(param->source, header);
+}
+
+size_t mgw_rb_get_audio_header(void *data, uint8_t **header)
+{
+    struct ring_buffer *rb = data;
+	SmemoryHead *shared_head;
+    struct source_param *param;
+
+	if (!rb || !header)
+		return 0;
+
+	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
+    param = shared_head->priv_data;
+	if (!param || !param->audio_header) {
+        blog(LOG_INFO, "Tried to get encoder audio header but source is NULL\n");
+        return 0;
+    }
+
+	return param->audio_header(param->source, header);
+}
