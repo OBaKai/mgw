@@ -1,0 +1,80 @@
+{
+    "name": "mgw-config",
+    "devices": [
+        {
+            "type": "Q8",
+            "SN": "Q8123456789014789632",
+            "stream": [
+                {
+                    "name": "mgw_device_stream1",
+                    "source": {
+                        "channel":1,
+                        "id": "private_source",
+                        "active":false,
+                        "private":true,
+                        "url":"",
+                        "key":"",
+                        "username":"",
+                        "password":"",
+                        "src_ip": "",
+                        "meta": {
+                            "vencoderID":"avc1",
+                            "width":1920,
+                            "height":1080,
+                            "fps":60,
+                            "v_bps":4096,
+                            "aencoderID":"mp4a",
+                            "channels":2,
+                            "samplerate":44100,
+                            "samplesize":16,
+                            "a_bps":9600
+                        },
+                        "buffer":{
+
+                        }
+                    },
+                    "outputs": [
+                        {
+                            "channel": 1,
+                            "id": "rtmp_output1",
+                            "active": true,
+                            "kbps": 1646.16,
+                            "protocol":"rtmp",
+                            "url":"rtmp://192.168.0.16/live",
+                            "key":"rtmp_output1",
+                            "username":"",
+                            "password":"",
+                            "dest_ip": "",
+                            "buffer":{
+                                
+                            }
+                        },
+                        {
+                            "channel": 2,
+                            "id":"rtmp_output2",
+                            "active":true,
+                            "kbps": 2654.98,
+                            "protocol":"rtmp",
+                            "url":"rtmp://192.168.0.16/live",
+                            "key":"rtmp_output2",
+                            "username":"",
+                            "password":"",
+                            "dest_ip": "",
+                            "buffer":{
+
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "R8",
+            "SN": "R8123456789014789632"
+        },
+        {
+            "type": "Q9",
+            "SN": "Q9123456789014789632"
+        }
+    ]
+}

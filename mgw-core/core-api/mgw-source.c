@@ -239,6 +239,8 @@ void mgw_source_destroy(struct mgw_source *source)
 	// if (source->control) {
 	// 	bfree(source->control);
 	// }
+    bmem_free(&source->audio_header);
+    bmem_free(&source->video_header);
 
 	if (source->private_source)
 		bfree((void*)source->info.id);

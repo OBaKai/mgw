@@ -180,6 +180,7 @@ static void *demuxing_thread(void *arg)
 
 	AVPacket video_pkt;
 	char aac_buf[32] = {};
+    int64_t ts_ms = 0, last_ts = 0, sleep_ms = 0;
 
 	av_init_packet(&video_pkt);
 	video_pkt.data = NULL;
@@ -193,20 +194,10 @@ static void *demuxing_thread(void *arg)
 		
 		ret = av_read_frame(demux->fmt, &demux->pkt);
 		if (ret >= 0) {
-			packet.pts = (demux->pkt.dts * av_q2d(demux->fmt->streams[demux->pkt.stream_index]->time_base)) * 1000;
+			ts_ms = (demux->pkt.dts * av_q2d(demux->fmt->streams[demux->pkt.stream_index]->time_base)) * 1000;
 			if (demux->pkt.stream_index == demux->video_index) {
 				/** video */
 				packet.type = ENCODER_VIDEO;
-
-				/*packet.size = demux->pkt.size;
-				packet.pts = demux->pkt.pts;
-				packet.dts = demux->pkt.dts;
-				packet.data = demux->pkt.data;
-				demux->proc_packet(demux->param, &packet);
-				fwrite(demux->pkt.data, demux->pkt.size, 1, demux->h264_file);
-
-				av_packet_unref(&demux->pkt);
-				*/
 
 				/** filter the stream if save to file */
 				//fwrite(demux->pkt.data, demux->pkt.size, 1, demux->h264_file);
@@ -220,15 +211,16 @@ static void *demuxing_thread(void *arg)
 							}
 							//blog(LOG_INFO, "write video data! size = %d", video_pkt.size);
 							packet.keyframe = mgw_avc_keyframe(video_pkt.data, video_pkt.size);
-							if (packet.keyframe) {
-								uint8_t *data = video_pkt.data;
-								blog(LOG_INFO, "Found a key frame(%d)! data[0] = %02x, data[1] = %02x, data[2] = %02x, data[3] = %02x, data[0] = %02x",
-										video_pkt.size, data[0], data[1], data[2], data[3], data[4]);
-							}
 							packet.size = video_pkt.size;
-							packet.pts = video_pkt.pts;
-							packet.dts = video_pkt.dts;
+							packet.pts = ts_ms * 1000;
+							packet.dts = ts_ms * 1000;
 							packet.data = video_pkt.data;
+
+							sleep_ms = packet.pts - last_ts;
+							if (sleep_ms < 0)
+								sleep_ms = 0;
+							last_ts = packet.pts;
+							usleep(sleep_ms);
 
 							demux->proc_packet(demux->param, &packet);
 						}
@@ -239,9 +231,15 @@ static void *demuxing_thread(void *arg)
 				/** audio */
 				packet.type = ENCODER_AUDIO;
 				packet.size = demux->pkt.size;
-				packet.pts = demux->pkt.pts;
-				packet.dts = demux->pkt.dts;
+				packet.pts = ts_ms * 1000;
+				packet.dts = ts_ms * 1000;
 				packet.data = demux->pkt.data;
+
+				sleep_ms = packet.pts - last_ts;
+				if (sleep_ms < 0)
+					sleep_ms = 0;
+				last_ts = packet.pts;
+				usleep(sleep_ms);
 
 				demux->proc_packet(demux->param, &packet);
 
@@ -251,7 +249,7 @@ static void *demuxing_thread(void *arg)
 					fwrite(aac_buf, out_size, 1, demux->aac_file);
 					fwrite(packet.data, packet.size, 1, demux->aac_file);
 				}
-				
+
 				av_packet_unref(&demux->pkt);
 			}
 		} else if (AVERROR_EOF == ret && demux->cycle_demux) {
@@ -260,11 +258,13 @@ static void *demuxing_thread(void *arg)
 			blog(LOG_ERROR, "demuxing file error");
 			break;
 		}
-
-		usleep(33 * 1000);
 	}
+
+	if (!stopping(&demux->demux_stopping));
+		pthread_detach(demux->demux_thread);
+
 	blog(LOG_INFO, "Stop demuxing thread");
-	demux->active = false;
+	os_atomic_set_bool(&demux->active, false);
 	pthread_exit(NULL);
 }
 
@@ -291,7 +291,6 @@ void ff_demux_stop(void *data)
 	if (!demux)
 		return;
 
-    os_atomic_set_bool(&demux->active, false);
 	os_event_signal(demux->demux_stopping);
 	if (demux->active)
 		pthread_join(demux->demux_thread, NULL);
@@ -306,6 +305,8 @@ void ff_demux_destroy(void *data)
 	if (!stopping(demux)) {
 		ff_demux_stop(demux);
 	}
+
+    dstr_free(&demux->src_file);
 
     avformat_close_input(&demux->fmt);
 	av_bsf_free(&demux->video_filter_ctx);

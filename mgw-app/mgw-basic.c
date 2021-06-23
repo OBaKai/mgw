@@ -231,7 +231,7 @@ void app_stream_release_output(struct mgw_stream *data, const char *id)
 /** Mis */
 mgw_data_t *app_stream_get_info(struct mgw_stream *data)
 {
-
+    return NULL;
 }
 
 bool app_stream_send_private_packet(struct mgw_stream *data, struct encoder_packet *packet)

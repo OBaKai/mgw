@@ -5,10 +5,7 @@ INC_DIR = ./ ../ \
 		  ../../mgw-core \
 		  ../../mgw-core/include
 
-LIB_DIR = . \
-		  ../../deps/lib
-
-TARGET = libmgw-sources.so
+TARGET = libmgw-mediaio.so
 TARGET_TYPE = "shared"
 LIBS =
 

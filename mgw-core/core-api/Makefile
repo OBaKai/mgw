@@ -1,14 +1,14 @@
-SRC_DIR = .
+SRC_DIR = ./
 
-INC_DIR = ./ ../ \
+INC_DIR = ../ \
 		  ../../deps/include \
-		  ../../mgw-core \
-		  ../../mgw-core/include
+		  ../include \
+		  ../../plugins
 
 LIB_DIR = . \
 		  ../../deps/lib
 
-TARGET = libmgw-sources.so
+TARGET = libmgw-core.so
 TARGET_TYPE = "shared"
 LIBS =
 

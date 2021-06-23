@@ -446,28 +446,28 @@ mgw_device_t *mgw_get_device_by_name(const char *name)
 
 bool mgw_get_source_info(struct mgw_source_info *msi)
 {
-
+    return false;
 }
 
 bool mgw_get_output_info(struct mgw_output_info *moi)
 {
-
+    return false;
 }
 
 bool mgw_get_format_info(struct mgw_format_info *mfi)
 {
-
+    return false;
 }
 
 /** Sources */
 mgw_data_t *mgw_save_source(mgw_source_t *source)
 {
-
+    return NULL;
 }
 
 mgw_source_t *mgw_load_source(mgw_data_t *data)
 {
-
+    return NULL;
 }
 
 void mgw_laod_sources(mgw_data_array_t *array, mgw_load_source_cb cb, void *private_data)
@@ -477,18 +477,18 @@ void mgw_laod_sources(mgw_data_array_t *array, mgw_load_source_cb cb, void *priv
 
 mgw_data_array_t *mgw_save_sources(void)
 {
-
+    return NULL;
 }
 
 /** Outputs */
 mgw_data_t *mgw_save_output(mgw_output_t *source)
 {
-
+    return NULL;
 }
 
 mgw_output_t *mgw_load_output(mgw_data_t *data)
 {
-
+    return NULL;
 }
 
 void mgw_laod_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *private_data)
@@ -498,5 +498,5 @@ void mgw_laod_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *priv
 
 mgw_data_array_t *mgw_save_outputs(void)
 {
-	
+	return NULL;
 }

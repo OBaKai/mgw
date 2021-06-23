@@ -1,5 +1,5 @@
 #------------------------ Output Settings ---------------------------
-prefix = $(shell pwd)/install
+prefix = $(PROJECT_ROOT_PATH)/install
 PLATFORM =
 DEBUG = "yes"
 
@@ -76,7 +76,7 @@ endif
 endif
 endif
 
-	@echo make ok, output: $(OUTPATH)/$(OUTFILE)  source files: $(SOURCE_FILES) source dir: $(SRC_DIR) dependence files: $(DEPENDENCE_FILES)
+#	@echo make ok, output: $(OUTPATH)/$(OUTFILE)  source files: $(SOURCE_FILES) source dir: $(SRC_DIR) dependence files: $(DEPENDENCE_FILES)
 
 %.o : %.c
 	$(CC) $(LDFLAGS) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -c $(DEPFLAGS) -o $@ $<
@@ -96,4 +96,4 @@ install:
 
 .PHONY: clean
 clean:
-	@-rm -rf $(OBJECT_FILES) $(OUTPATH)/$(TARGET) $(DEPENDENCE_FILES)
+	@-rm -rf $(OBJECT_FILES) $(OUTPATH) $(DEPENDENCE_FILES)

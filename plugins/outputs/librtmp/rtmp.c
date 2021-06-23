@@ -64,6 +64,7 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/md5.h>
 #include <mbedtls/base64.h>
+#include <mbedtls/error.h>
 #define MD5_DIGEST_LENGTH 16
 
 #elif defined(USE_POLARSSL)
@@ -365,12 +366,16 @@ RTMP_TLS_LoadCerts() {
 
     CFRelease(keychain_ref);
 #elif defined(__linux__)
-	int ret = mbedtls_x509_crt_parse_file(chain, "/home/resource/cacert.pem");
+	int ret = 0;
+#ifdef CROSS_PLATFORM
+	ret = mbedtls_x509_crt_parse_file(chain, "/home/resource/cacert.pem");
+#else
+	ret = mbedtls_x509_crt_parse_file(chain, "/etc/ssl/certs/cacert.pem");
+#endif
     if (ret != 0) {
         char err_str[512] = {0};
-		RTMP_Log_Fl(RTMP_LOGERROR,"ERROR: %s, %d RTMP_TLS_LoadCerts failed! ret = %d\n", __FUNCTION__, __LINE__, ret);
 		mbedtls_strerror(ret, err_str, 512);
-		RTMP_Log_Fl(RTMP_LOGERROR, "mbedtls_x509_crt_parse_file error:%s\n", err_str);
+		RTMP_Log_Fl(RTMP_LOGERROR, "mbedtls_x509_crt_parse ret:%d error:%s", ret, err_str);
         goto error;
     }
 #endif
@@ -5585,8 +5590,8 @@ int
 RTMP_Write(RTMP *r, const char *buf, int size, int streamIdx)
 {
     RTMPPacket *pkt = &r->m_write;
-    char *pend, *enc;
-    int s2 = size, ret, num;
+    char *pend = NULL, *enc = NULL;
+    int s2 = size, ret = 0, num = 0;
 
     pkt->m_nChannel = 0x04;	/* source channel */
     pkt->m_nInfoField2 = r->Link.streams[streamIdx].id;

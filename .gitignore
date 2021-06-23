@@ -1,0 +1,31 @@
+#Object files
+*.o
+*.obj
+*.elf
+*.d
+
+#Libraries
+*lib
+*.a
+*.dll
+*.so
+*.so.*
+
+#Executables
+*.exe
+*.out
+*.app
+*.hex
+*.bin
+
+#Debug files
+*.mp4
+*.flv
+*.h264
+*.aac
+*.cap
+
+#Dependence files
+deps/bin
+deps/lib
+*.log

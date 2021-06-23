@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 
@@ -21,6 +22,8 @@
 #define NETIF_MTU_DEF   1350
 #define NETIF_TYPE_DEF  "default"
 #define NETIF_NAME_DEF  ""
+
+pthread_once_t rtmp_context_once = PTHREAD_ONCE_INIT;
 
 struct rtmp_stream {
     mgw_output_t    *output;
@@ -51,7 +54,7 @@ struct rtmp_stream {
     struct dstr     username, password;
     struct dstr     encoder_name;
 
-    RTMP            *rtmp;
+    RTMP            rtmp;
 
     int             max_shutdown_time_sec;
 };
@@ -89,6 +92,13 @@ static void log_rtmp(int level, const char *fmt, va_list args)
 	blogva(LOG_INFO, fmt, args);
 }
 
+static void rtmp_stream_init_once(void)
+{
+    RTMP_LogSetCallback(log_rtmp);
+	RTMP_LogSetLevel(RTMP_LOGWARNING);
+    (void)signal(SIGPIPE, SIG_IGN);
+    blog(LOG_INFO, "rtmp stream initialize once");
+}
 
 static void rtmp_stream_get_default(mgw_data_t *setting)
 {
@@ -140,8 +150,7 @@ static void rtmp_stream_destroy(void *data)
     } else if (connecting(stream) || active(stream)) {
         if (stream->connecting)
             pthread_join(stream->connect_thread, NULL);
-        
-        bfree(stream->rtmp);
+
         stream->stop_time = (uint64_t)time(NULL);
         os_event_signal(stream->stop_event);
 
@@ -168,14 +177,8 @@ static void *rtmp_stream_create(mgw_data_t *setting, mgw_output_t *output)
     struct rtmp_stream *stream = bzalloc(sizeof(struct rtmp_stream));
     stream->output = output;
 
-    stream->rtmp = RTMP_Alloc();
-    if (!stream->rtmp) {
-        blog(LOG_ERROR, "Failed to alloc rtmp!");
-        goto rtmp_fail;
-    }
-    RTMP_Init(stream->rtmp);
-    RTMP_LogSetCallback(log_rtmp);
-	RTMP_LogSetLevel(RTMP_LOGWARNING);
+    pthread_once(&rtmp_context_once, rtmp_stream_init_once);
+    RTMP_Init(&stream->rtmp);
 
     if (os_event_init(&stream->stop_event, OS_EVENT_TYPE_MANUAL) != 0)
 		goto rtmp_fail;
@@ -244,7 +247,7 @@ static inline void set_rtmp_dstr(AVal *val, struct dstr *str)
 
 static bool discard_recv_data(struct rtmp_stream *stream, size_t size)
 {
-    RTMP *rtmp = (RTMP*)stream->rtmp;
+    RTMP *rtmp = (RTMP*)&stream->rtmp;
     uint8_t buf[512];
     size_t ret;
  
@@ -274,7 +277,7 @@ static int send_packet(struct rtmp_stream *stream,
 
 	uint64_t tick = packet->pts / 1000;
 
-	if (!stream->start_dts_offset) {
+	if (!stream->start_dts_offset && !is_header) {
 		if (ENCODER_VIDEO == packet->type)
 			stream->start_dts_offset = tick;
 		else
@@ -282,10 +285,12 @@ static int send_packet(struct rtmp_stream *stream,
 	}
 
 	if (!stream->new_socket_loop) {
-		ret = ioctl(stream->rtmp->m_sb.sb_socket, FIONREAD, &recv_size);
+		ret = ioctl(stream->rtmp.m_sb.sb_socket, FIONREAD, &recv_size);
 		if (ret >= 0 && recv_size > 0) {
-			if (!discard_recv_data(stream, (size_t)recv_size))
-				return -1;
+			if (!discard_recv_data(stream, (size_t)recv_size)) {
+                ret = -1;
+                goto error;
+            }
 		}
 	}
 
@@ -294,13 +299,13 @@ static int send_packet(struct rtmp_stream *stream,
 	flv_packet_mux(packet, is_header ? 0 : stream->start_dts_offset,
 			&data, &size, is_header);
 
-	ret = RTMP_Write(stream->rtmp, (char*)data, (int)size, (int)idx);
+	ret = RTMP_Write(&stream->rtmp, (char*)data, (int)size, (int)idx);
 	bfree(data);
 
-	if (is_header)
-		bfree(packet->data);
-
 	stream->total_bytes_sent += size;
+error:
+    if (is_header)
+		bfree(packet->data);
 	return ret;
 }
 
@@ -314,7 +319,7 @@ static bool send_meta_data(struct rtmp_stream *stream, size_t idx)
 					&meta_data, &meta_data_size, false, idx);
 
 	if (success) {
-		success = RTMP_Write(stream->rtmp, (char*)meta_data,
+		success = RTMP_Write(&stream->rtmp, (char*)meta_data,
 				(int)meta_data_size, (int)idx) >= 0;
 		bfree(meta_data);
 	}
@@ -343,7 +348,6 @@ static bool send_video_header(struct rtmp_stream *stream)
 {
 	mgw_output_t  *context  = stream->output;
 	uint8_t       *header;
-	size_t        size;
 
 	struct encoder_packet packet   = {
 		.type         = ENCODER_VIDEO,
@@ -378,10 +382,11 @@ static void *send_thread(void *data)
 
 	os_set_thread_name("rtmp-stream: send_thread");
 	blog(LOG_INFO, "rtmp-stream thread running!");
-    while(/*os_sem_wait(stream->send_sem) == 0*/stream->active) {
+    while(/*os_sem_wait(stream->send_sem) == 0*/os_atomic_load_bool(&stream->active)) {
 		if (stopping(stream))
 			break;
 
+        usleep(10 * 1000);
 		if (!stream->output->get_next_encoder_packet(stream->output, &packet))
 			continue;
 
@@ -396,7 +401,6 @@ static void *send_thread(void *data)
 			os_atomic_set_bool(&stream->disconnected, true);
 			break;
 		}
-
 		bfree(packet.data);
 	}
 
@@ -406,8 +410,8 @@ static void *send_thread(void *data)
 	else
 		blog(LOG_INFO, "User stopped the stream");
 
-	stream->output->last_error_status = stream->rtmp->last_error_code;
-	RTMP_Close(stream->rtmp);
+	stream->output->last_error_status = stream->rtmp.last_error_code;
+	RTMP_Close(&stream->rtmp);
 	if (!stopping(stream)) {
 		pthread_detach(stream->send_thread);
 		stream->output->signal_stop(stream->output, MGW_OUTPUT_DISCONNECTED);
@@ -429,14 +433,14 @@ static int init_send(struct rtmp_stream *stream)
 {
     if (!send_meta_data(stream, 0)) {
         blog(LOG_ERROR, "Disconnected while attempting to connect to server!");
-        stream->output->last_error_status = stream->rtmp->last_error_code;
+        stream->output->last_error_status = stream->rtmp.last_error_code;
         return MGW_OUTPUT_DISCONNECTED;
     }
 
     reset_semaphore(stream);
     os_atomic_set_bool(&stream->active, true);
     if (pthread_create(&stream->send_thread, NULL, send_thread, stream) != 0) {
-        RTMP_Close(stream->rtmp);
+        RTMP_Close(&stream->rtmp);
         blog(LOG_ERROR, "Failed to create send thread!");
         os_atomic_set_bool(&stream->active, false);
         return MGW_OUTPUT_ERROR;
@@ -448,7 +452,6 @@ static int init_send(struct rtmp_stream *stream)
 static bool init_connect(struct rtmp_stream *stream)
 {
 	mgw_data_t *settings;
-	const char *bind_ip;
 
 	if (stopping(stream)) {
 		pthread_join(stream->send_thread, NULL);
@@ -494,52 +497,52 @@ static int try_connect(struct rtmp_stream *stream)
     blog(LOG_INFO, "Connecting to rtmp url: %s  code: %s ...",
 				stream->path.array, stream->key.array);
 
-    if (!RTMP_SetupURL(stream->rtmp, stream->path.array))
+    if (!RTMP_SetupURL(&stream->rtmp, stream->path.array))
         return MGW_OUTPUT_BAD_PATH;
 
-    RTMP_EnableWrite(stream->rtmp);
+    RTMP_EnableWrite(&stream->rtmp);
 
-    set_rtmp_dstr(&stream->rtmp->Link.pubUser,   &stream->username);
-    set_rtmp_dstr(&stream->rtmp->Link.pubPasswd, &stream->password);
-    set_rtmp_dstr(&stream->rtmp->Link.flashVer,  &stream->encoder_name);
-    stream->rtmp->Link.swfUrl = stream->rtmp->Link.tcUrl;
-    stream->rtmp->en_ip_domain = !dstr_is_empty(&stream->dest_ip);
+    set_rtmp_dstr(&stream->rtmp.Link.pubUser,   &stream->username);
+    set_rtmp_dstr(&stream->rtmp.Link.pubPasswd, &stream->password);
+    set_rtmp_dstr(&stream->rtmp.Link.flashVer,  &stream->encoder_name);
+    stream->rtmp.Link.swfUrl = stream->rtmp.Link.tcUrl;
+    stream->rtmp.en_ip_domain = !dstr_is_empty(&stream->dest_ip);
 
-    if (stream->rtmp->en_ip_domain)
-        strncpy(stream->rtmp->ip_domain,
+    if (stream->rtmp.en_ip_domain)
+        strncpy(stream->rtmp.ip_domain,
                 stream->dest_ip.array, 
-                sizeof(stream->rtmp->ip_domain) - 1);
+                sizeof(stream->rtmp.ip_domain) - 1);
 
     if (!dstr_is_empty(&stream->netif_name)) {
         if (strncmp(stream->netif_type.array, "ip", 2) == 0) {
-            if (netif_str_to_addr(&stream->rtmp->m_bindIP.addr,
-                            &stream->rtmp->m_bindIP.addrLen,
+            if (netif_str_to_addr(&stream->rtmp.m_bindIP.addr,
+                            &stream->rtmp.m_bindIP.addrLen,
                                   stream->netif_name.array)) {
-                int len = stream->rtmp->m_bindIP.addrLen;
+                int len = stream->rtmp.m_bindIP.addrLen;
                 bool ipv6 = len == sizeof(struct sockaddr_in6);
-                stream->rtmp->set_netopt = NETIF_IP;
+                stream->rtmp.set_netopt = NETIF_IP;
                 blog(LOG_INFO, "Binding to IPv%d", ipv6 ? 6 : 4);
             }
         } else if (strncmp(stream->netif_type.array, "net_card", 8) == 0) {
-            stream->rtmp->clustering_mtu = stream->netif_mtu;
-            stream->rtmp->set_netopt = NETIF_NETCARD;
-            strncpy(stream->rtmp->netcard_name, stream->netif_name.array, 
-                        sizeof(stream->rtmp->netcard_name) - 1);
+            stream->rtmp.clustering_mtu = stream->netif_mtu;
+            stream->rtmp.set_netopt = NETIF_NETCARD;
+            strncpy(stream->rtmp.netcard_name, stream->netif_name.array, 
+                        sizeof(stream->rtmp.netcard_name) - 1);
         }
     }
 
-    RTMP_AddStream(stream->rtmp, stream->key.array);
+    RTMP_AddStream(&stream->rtmp, stream->key.array);
 
-    stream->rtmp->m_outChunkSize        = 4096;
-    stream->rtmp->m_bSendChunkSizeInfo  = true;
-    stream->rtmp->m_bUseNagle           = false;
+    stream->rtmp.m_outChunkSize        = 4096;
+    stream->rtmp.m_bSendChunkSizeInfo  = true;
+    stream->rtmp.m_bUseNagle           = false;
 
-    if (!RTMP_Connect(stream->rtmp, NULL)) {
-        stream->output->last_error_status = stream->rtmp->last_error_code;
+    if (!RTMP_Connect(&stream->rtmp, NULL)) {
+        stream->output->last_error_status = stream->rtmp.last_error_code;
         return MGW_OUTPUT_CONNECT_FAILED;
     }
 
-    if (!RTMP_ConnectStream(stream->rtmp, 0))
+    if (!RTMP_ConnectStream(&stream->rtmp, 0))
         return MGW_OUTPUT_INVALID_STREAM;
     blog(LOG_INFO, "Connecting rtmp stream success!");
     return init_send(stream);
@@ -554,6 +557,7 @@ static void *connect_thread(void *data)
 
     if (!init_connect(stream)) {
         stream->output->signal_stop(stream->output, MGW_OUTPUT_BAD_PATH);
+		pthread_detach(stream->connect_thread);
         return NULL;
     }
 
@@ -576,7 +580,7 @@ static bool rtmp_stream_start(void *data)
         return false;
 
     os_atomic_set_bool(&stream->connecting, true);
-    return pthread_create(&stream->connect_thread, NULL, connect_thread, stream) == 0;
+	return pthread_create(&stream->connect_thread, NULL, connect_thread, stream) == 0;
 }
 
 static void rtmp_stream_stop(void *data)
@@ -595,6 +599,7 @@ static void rtmp_stream_stop(void *data)
 
 	if (active(stream)) {
 		os_event_signal(stream->stop_event);
+        pthread_join(stream->send_thread, NULL);
 		if (stream->stop_time == 0)
 			os_sem_post(stream->send_sem);
 	} else {
@@ -614,7 +619,7 @@ static uint64_t rtmp_stream_get_total_bytes(void *data)
 static void rtmp_stream_apply_update(void *data, mgw_data_t *settings)
 {
     struct rtmp_stream *stream = data;
-    if (!stream_valid(data) || !settings)
+    if (!stream_valid(stream) || !settings)
         return;
 }
 
