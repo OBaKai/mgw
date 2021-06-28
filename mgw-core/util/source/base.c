@@ -10,7 +10,7 @@
 
 #define _DEBUG
 #ifdef _DEBUG
-static int log_output_level = LOG_DEBUG;
+static int log_output_level = MGW_LOG_DEBUG;
 #else
 static int log_output_level = LOG_INFO;
 #endif
@@ -27,22 +27,22 @@ static void def_log_handler(int log_level, const char *format,
 
 	if (log_level <= log_output_level) {
 		switch (log_level) {
-		case LOG_DEBUG:
+		case MGW_LOG_DEBUG:
 			fprintf(stdout, "[debug] %s\n", out);
 			fflush(stdout);
 			break;
 
-		case LOG_INFO:
+		case MGW_LOG_INFO:
 			fprintf(stdout, "[info] %s\n", out);
 			fflush(stdout);
 			break;
 
-		case LOG_WARNING:
+		case MGW_LOG_WARNING:
 			fprintf(stdout, "[warning] %s\n", out);
 			fflush(stdout);
 			break;
 
-		case LOG_ERROR:
+		case MGW_LOG_ERROR:
 			fprintf(stderr, "[error] %s\n", out);
 			fflush(stderr);
 		}

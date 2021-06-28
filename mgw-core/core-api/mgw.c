@@ -38,7 +38,7 @@ static const char *get_git_sha1(void)
 
     memcpy(sha1, buffer, 6);
 
-    blog(LOG_DEBUG, "----git sha1: %s\n", sha1);
+    blog(MGW_MGW_LOG_DEBUG, "----git sha1: %s\n", sha1);
 
     return sha1;
 }*/
@@ -142,7 +142,7 @@ static bool mgw_start_services(void)
 bool mgw_startup(mgw_data_t *store)
 {
 	if (mgw) {
-		blog(LOG_WARNING, "mgw aready exist! Tried to call mgw_startup more than once");
+		blog(MGW_LOG_WARNING, "mgw aready exist! Tried to call mgw_startup more than once");
 		return false;
 	}
 
@@ -152,7 +152,7 @@ bool mgw_startup(mgw_data_t *store)
 	}
 
 	if (!mgw_start_services())
-		blog(LOG_INFO, "All services invalid!");
+		blog(MGW_LOG_INFO, "All services invalid!");
 
 	return true;
 }

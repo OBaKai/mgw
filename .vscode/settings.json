@@ -81,6 +81,7 @@
         "stream_sort.h": "c",
         "mgw-basic.h": "c",
         "random": "c",
-        "*.inc": "c"
+        "*.inc": "c",
+        "pthread.h": "c"
     }
 }

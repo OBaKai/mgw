@@ -10,6 +10,11 @@
 #define RTSP_OUTPUT		"rtsp_output"
 #define HLS_OUTPUT		"hls_output"
 
+struct mgw_stream {
+	mgw_source_t				*source;
+	DARRAY(struct mgw_output)	outputs;
+	mgw_data_t					*settings;
+};
 
 /** The configuration should not include source and output, just descrip mgw system settings */
 bool mgw_app_startup(const char *config_path)
@@ -27,15 +32,15 @@ void mgw_app_exit(void)
 }
 
 /** basic functions */
-struct mgw_stream *app_stream_create(const char *name)
+void *mgw_stream_create(const char *name)
 {
-	struct mgw_stream *stream = (struct mgw_stream *)bzalloc(sizeof(struct mgw_stream));
+	struct mgw_stream *stream = bzalloc(sizeof(struct mgw_stream));
 	stream->settings = mgw_data_create();
 	mgw_data_set_string(stream->settings, "name", name);
 	return stream;
 }
 
-void app_stream_destroy(struct mgw_stream *data)
+void mgw_stream_destroy(void *data)
 {
 	struct mgw_stream *stream = data;
 	if (!stream)
@@ -55,7 +60,16 @@ void app_stream_destroy(struct mgw_stream *data)
 		mgw_data_release(stream->settings);
 }
 
-static bool app_stream_add_source_internal(
+bool mgw_stream_has_source(void *data)
+{
+	struct mgw_stream *stream = data;
+	if (!stream)
+		return false;
+
+	return !!stream->source;
+}
+
+static bool mgw_stream_add_source_internal(
 		struct mgw_stream *stream, mgw_data_t *settings, bool is_private)
 {
 	mgw_source_t *source = NULL;
@@ -73,7 +87,7 @@ static bool app_stream_add_source_internal(
 
 	stream->source = source;
 	mgw_source_addref(source);
-    blog(LOG_INFO, "[%s][%d]: source(%p)", __FILE__, __LINE__, stream->source);
+    blog(MGW_LOG_INFO, "[%s][%d]: source(%p)", __FILE__, __LINE__, stream->source);
 
 	if (mgw_data_has_user_value(stream->settings, "source"))
 		mgw_data_erase(stream->settings, "source");
@@ -84,28 +98,28 @@ static bool app_stream_add_source_internal(
 
 /** ---------------------------------------------- */
 /** Sources */
-bool app_stream_add_source(struct mgw_stream *data, mgw_data_t *settings)
+bool mgw_stream_add_source(void *data, mgw_data_t *settings)
 {
-	struct mgw_stream *stream = (struct mgw_stream *)data;
+	struct mgw_stream *stream = data;
 	if (!stream || !settings)
 		return false;
 	if (stream->source)
 		return true;
 
-	return app_stream_add_source_internal(stream, settings, false);
+	return mgw_stream_add_source_internal(stream, settings, false);
 }
 
-bool app_stream_add_private_source(struct mgw_stream *data, mgw_data_t *settings)
+bool mgw_stream_add_private_source(void *data, mgw_data_t *settings)
 {
-	struct mgw_stream *stream = (struct mgw_stream *)data;
+	struct mgw_stream *stream = data;
 	if (!stream || !settings)
 		return false;
-	return app_stream_add_source_internal(stream, settings, true);
+	return mgw_stream_add_source_internal(stream, settings, true);
 }
 
-void app_stream_release_source(struct mgw_stream *data)
+void mgw_stream_release_source(void *data)
 {
-	struct mgw_stream *stream = (struct mgw_stream *)data;
+	struct mgw_stream *stream = data;
 	if (!stream)
 		return;
 
@@ -136,12 +150,12 @@ static const char *get_output_id(const char *protocol)
 		return NULL;
 }
 
-bool app_stream_add_ouptut(struct mgw_stream *data, mgw_data_t *settings)
+bool mgw_stream_add_ouptut(void *data, mgw_data_t *settings)
 {
 	const char *name = NULL, *id = NULL, *old_id = NULL;
 	const char *protocol = NULL;
 	struct mgw_output *output = NULL;
-	struct mgw_stream *stream = (struct mgw_stream *)data;
+	struct mgw_stream *stream = data;
 
 	if (!stream || !settings)
 		return false;
@@ -159,12 +173,12 @@ bool app_stream_add_ouptut(struct mgw_stream *data, mgw_data_t *settings)
 
 	output = mgw_output_create(get_output_id(protocol), name, settings);
 	if (!output) {
-		blog(LOG_ERROR, "Tried to create output failed!");
+		blog(MGW_LOG_ERROR, "Tried to create output failed!");
 		return false;
 	}
 
 	if (!mgw_output_start(output))
-		blog(LOG_INFO, "Tried to start output:%s failed, try again!", id);
+		blog(MGW_LOG_INFO, "Tried to start output:%s failed, try again!", id);
 
 	da_push_back(stream->outputs, output);
 	mgw_output_addref(output);
@@ -193,14 +207,14 @@ bool app_stream_add_ouptut(struct mgw_stream *data, mgw_data_t *settings)
 	return true;
 }
 
-bool app_stream_add_private_output(struct mgw_stream *data, mgw_data_t *settings)
+bool mgw_stream_add_private_output(void *data, mgw_data_t *settings)
 {
 	return false;
 }
 
-void app_stream_release_output(struct mgw_stream *data, const char *id)
+void mgw_stream_release_output(void *data, const char *id)
 {
-	struct mgw_stream *stream = (struct mgw_stream *)data;
+	struct mgw_stream *stream = data;
 	if (!stream || !id)
 		return;
 
@@ -229,14 +243,14 @@ void app_stream_release_output(struct mgw_stream *data, const char *id)
 
 /** ---------------------------------------------- */
 /** Mis */
-mgw_data_t *app_stream_get_info(struct mgw_stream *data)
+mgw_data_t *mgw_stream_get_info(void *data)
 {
     return NULL;
 }
 
-bool app_stream_send_private_packet(struct mgw_stream *data, struct encoder_packet *packet)
+bool mgw_stream_send_private_packet(void *data, struct encoder_packet *packet)
 {
-	struct mgw_stream *stream = (struct mgw_stream *)data;
+	struct mgw_stream *stream = data;
 	if (!stream || !stream->source)
 		return false;
 

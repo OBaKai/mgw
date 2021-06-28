@@ -620,7 +620,7 @@ mgw_data_t *mgw_data_create_from_json(const char *json_string)
 		mgw_data_add_json_object_data(data, root);
 		json_decref(root);
 	} else {
-		blog(LOG_ERROR, "mgw-data.c: [mgw_data_create_from_json] "
+		blog(MGW_LOG_ERROR, "mgw-data.c: [mgw_data_create_from_json] "
 		                "Failed reading json string (%d): %s",
 		                error.line, error.text);
 		mgw_data_release(data);
@@ -656,7 +656,7 @@ mgw_data_t *mgw_data_create_from_json_file_safe(const char *json_file,
 		dstr_cat(&backup_file, backup_ext);
 
 		if (os_file_exists(backup_file.array)) {
-			blog(LOG_WARNING, "mgw-data.c: "
+			blog(MGW_LOG_WARNING, "mgw-data.c: "
 					"[mgw_data_create_from_json_file_safe] "
 					"attempting backup file");
 

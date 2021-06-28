@@ -292,7 +292,7 @@ bool os_quick_write_utf8_file_safe(const char *path, const char *str,
 	bool success = false;
 
 	if (!temp_ext || !*temp_ext) {
-		blog(LOG_ERROR, "os_quick_write_utf8_file_safe: invalid "
+		blog(MGW_LOG_ERROR, "os_quick_write_utf8_file_safe: invalid "
 		                "temporary extension specified");
 		return false;
 	}
@@ -303,7 +303,7 @@ bool os_quick_write_utf8_file_safe(const char *path, const char *str,
 	dstr_cat(&temp_path, temp_ext);
 
 	if (!os_quick_write_utf8_file(temp_path.array, str, len, marker)) {
-		blog(LOG_ERROR, "os_quick_write_utf8_file_safe: failed to "
+		blog(MGW_LOG_ERROR, "os_quick_write_utf8_file_safe: failed to "
 			"write to %s", temp_path.array);
 		goto cleanup;
 	}

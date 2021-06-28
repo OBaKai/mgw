@@ -58,17 +58,17 @@ void *ff_demux_create(const char *url, bool save_file)
 	os_sem_init(&demux->demux_sem, 0);
 
     if (avformat_open_input(&demux->fmt, url, NULL, NULL) < 0) {
-		blog(LOG_ERROR, "Tried to open input:%s failed!");
+		blog(MGW_LOG_ERROR, "Tried to open input:%s failed!");
 		goto error;
 	}
 
 	if (avformat_find_stream_info(demux->fmt, NULL) < 0) {
-		blog(LOG_ERROR, "Tried to find stream info failed!");
+		blog(MGW_LOG_ERROR, "Tried to find stream info failed!");
 		goto error;
 	}
 
 	if ((ret = av_find_best_stream(demux->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0) {
-		blog(LOG_INFO, "Couldn't found video stream!");
+		blog(MGW_LOG_INFO, "Couldn't found video stream!");
 	} else {
 		demux->video_index = ret;
 		demux->video = demux->fmt->streams[ret];
@@ -77,7 +77,7 @@ void *ff_demux_create(const char *url, bool save_file)
 	}
 
 	if ((ret = av_find_best_stream(demux->fmt, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0)) < 0) {
-		blog(LOG_INFO, "Couldn't found audio stream!");
+		blog(MGW_LOG_INFO, "Couldn't found audio stream!");
 	} else {
 		demux->audio_index = ret;
 		demux->audio = demux->fmt->streams[ret];
@@ -88,7 +88,7 @@ void *ff_demux_create(const char *url, bool save_file)
 	/** Save video and audio to file must be initialize filter and open file*/
 	const AVBitStreamFilter *h264_filter = av_bsf_get_by_name("h264_mp4toannexb");
 	if (av_bsf_alloc(h264_filter, &demux->video_filter_ctx) < 0) {
-		blog(LOG_INFO, "Tried to alloc h264 filter failed!");
+		blog(MGW_LOG_INFO, "Tried to alloc h264 filter failed!");
 		if (demux->h264_file) {
 			fclose(demux->h264_file);
 			demux->h264_file = NULL;
@@ -176,7 +176,7 @@ static void *demuxing_thread(void *arg)
 	int ret = 0;
 	struct ff_demux *demux = arg;
 	if (!demux)
-		pthread_exit(NULL);
+		return NULL;
 
 	AVPacket video_pkt;
 	char aac_buf[32] = {};
@@ -186,7 +186,7 @@ static void *demuxing_thread(void *arg)
 	video_pkt.data = NULL;
 	video_pkt.size = 0;
 	demux->active = true;
-	blog(LOG_INFO, "Start demuxing thread");
+	blog(MGW_LOG_INFO, "Start demuxing thread");
 	while(/*os_sem_wait(demux->demux_sem) == 0*/demux->active) {
 		struct encoder_packet packet = {};
 		if (stopping(demux))
@@ -209,20 +209,20 @@ static void *demuxing_thread(void *arg)
 								fwrite(video_pkt.data, video_pkt.size, 1, demux->h264_file);
 								fflush(demux->h264_file);
 							}
-							//blog(LOG_INFO, "write video data! size = %d", video_pkt.size);
+							//blog(MGW_LOG_INFO, "write video data! size = %d", video_pkt.size);
 							packet.keyframe = mgw_avc_keyframe(video_pkt.data, video_pkt.size);
 							packet.size = video_pkt.size;
 							packet.pts = ts_ms * 1000;
 							packet.dts = ts_ms * 1000;
 							packet.data = video_pkt.data;
 
+							demux->proc_packet(demux->param, &packet);
+
 							sleep_ms = packet.pts - last_ts;
 							if (sleep_ms < 0)
 								sleep_ms = 0;
 							last_ts = packet.pts;
 							usleep(sleep_ms);
-
-							demux->proc_packet(demux->param, &packet);
 						}
 					}
 					av_packet_unref(&video_pkt);
@@ -235,13 +235,13 @@ static void *demuxing_thread(void *arg)
 				packet.dts = ts_ms * 1000;
 				packet.data = demux->pkt.data;
 
+				demux->proc_packet(demux->param, &packet);
+
 				sleep_ms = packet.pts - last_ts;
 				if (sleep_ms < 0)
 					sleep_ms = 0;
 				last_ts = packet.pts;
 				usleep(sleep_ms);
-
-				demux->proc_packet(demux->param, &packet);
 
 				/** filter the stream if save to file */
 				if (demux->aac_file) {
@@ -255,17 +255,17 @@ static void *demuxing_thread(void *arg)
 		} else if (AVERROR_EOF == ret && demux->cycle_demux) {
 			av_seek_frame(demux->fmt, demux->video_index, 0, AVSEEK_FLAG_BACKWARD);
 		} else if (ret < 0) {
-			blog(LOG_ERROR, "demuxing file error");
+			blog(MGW_LOG_ERROR, "demuxing file error");
 			break;
 		}
 	}
 
-	if (!stopping(&demux->demux_stopping));
+	if (!stopping(demux));
 		pthread_detach(demux->demux_thread);
 
-	blog(LOG_INFO, "Stop demuxing thread");
+	blog(MGW_LOG_INFO, "Stop demuxing thread");
 	os_atomic_set_bool(&demux->active, false);
-	pthread_exit(NULL);
+	return NULL;
 }
 
 bool ff_demux_start(void *data, void (*proc_packet)(void *param, struct encoder_packet *packet), void *param)
@@ -279,7 +279,7 @@ bool ff_demux_start(void *data, void (*proc_packet)(void *param, struct encoder_
     reset_semaphore(demux);
 	os_atomic_set_bool(&demux->active, true);
 	if (0 != pthread_create(&demux->demux_thread, NULL, demuxing_thread, demux)) {
-		blog(LOG_ERROR, "Tried to create demuxing thread failed!");
+		blog(MGW_LOG_ERROR, "Tried to create demuxing thread failed!");
 		return false;
 	}
 	return true;

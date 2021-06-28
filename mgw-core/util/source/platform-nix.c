@@ -70,7 +70,7 @@ void *os_dlopen(const char *path)
 
 	void *res = dlopen(dylib_name.array, RTLD_LAZY);
 	if (!res)
-		blog(LOG_ERROR, "os_dlopen(%s->%s): %s\n",
+		blog(MGW_LOG_ERROR, "os_dlopen(%s->%s): %s\n",
 				path, dylib_name.array, dlerror());
 
 	dstr_free(&dylib_name);
@@ -330,7 +330,7 @@ static inline bool is_dir(const char *path)
 	if (stat(path, &stat_info) == 0)
 		return !!S_ISDIR(stat_info.st_mode);
 
-	blog(LOG_DEBUG, "is_dir: stat for %s failed, errno: %d", path, errno);
+	blog(MGW_LOG_DEBUG, "is_dir: stat for %s failed, errno: %d", path, errno);
 	return false;
 }
 
@@ -566,7 +566,7 @@ static void reset_screensaver(os_inhibit_t *info)
 		int status;
 		while (waitpid(pid, &status, 0) == -1);
 	} else {
-		blog(LOG_WARNING, "Failed to create xdg-screensaver: %d", err);
+		blog(MGW_LOG_WARNING, "Failed to create xdg-screensaver: %d", err);
 	}
 }
 
@@ -601,7 +601,7 @@ bool os_inhibit_sleep_set_active(os_inhibit_t *info, bool active)
 		ret = pthread_create(&info->screensaver_thread, NULL,
 				&screensaver_thread, info);
 		if (ret < 0) {
-			blog(LOG_ERROR, "Failed to create screensaver "
+			blog(MGW_LOG_ERROR, "Failed to create screensaver "
 			                "inhibitor thread");
 			return false;
 		}
@@ -953,8 +953,8 @@ static void log_processor_info(void)
 
 		if (*line == '\n' && physical_id != last_physical_id) {
 			last_physical_id = physical_id;
-			blog(LOG_INFO, "CPU Name: %s", proc_name.array);
-			blog(LOG_INFO, "CPU Speed: %sMHz", proc_speed.array);
+			blog(MGW_LOG_INFO, "CPU Name: %s", proc_name.array);
+			blog(MGW_LOG_INFO, "CPU Speed: %sMHz", proc_speed.array);
 		}
 	}
 
@@ -966,7 +966,7 @@ static void log_processor_info(void)
 
 static void log_processor_cores(void)
 {
-	blog(LOG_INFO, "Physical Cores: %d, Logical Cores: %d",
+	blog(MGW_LOG_INFO, "Physical Cores: %d, Logical Cores: %d",
 			os_get_physical_cores(), os_get_logical_cores());
 }
 
@@ -976,7 +976,7 @@ static void log_memory_info(void)
 	if (sysinfo(&info) < 0)
 		return;
 
-	blog(LOG_INFO, "Physical Memory: %"PRIu64"MB Total, %"PRIu64"MB Free",
+	blog(MGW_LOG_INFO, "Physical Memory: %"PRIu64"MB Total, %"PRIu64"MB Free",
 			(uint64_t)info.totalram * info.mem_unit / 1024 / 1024,
 			((uint64_t)info.freeram + (uint64_t)info.bufferram) *
 			info.mem_unit / 1024 / 1024);
@@ -988,7 +988,7 @@ static void log_kernel_version(void)
 	if (uname(&info) < 0)
 		return;
 
-	blog(LOG_INFO, "Kernel Version: %s %s", info.sysname, info.release);
+	blog(MGW_LOG_INFO, "Kernel Version: %s %s", info.sysname, info.release);
 }
 
 void log_system_info(void)

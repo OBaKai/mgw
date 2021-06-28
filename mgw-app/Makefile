@@ -8,21 +8,37 @@ INC_DIR = . \
 		  ../plugins/sources \
 
 LIB_DIR = . \
-		  ../deps/lib/x86 \
-		  ../install \
-		  ../mgw-core/source \
-		  ../mgw-core/buffer \
-		  ../mgw-core/util \
-		  ../plugins/outputs \
-		  ../plugins/sources \
-		  ../plugins/formats \
+		  ../mgw-core/core-api/debug \
+		  ../mgw-core/buffer/debug \
+		  ../mgw-core/util/debug \
+		  ../plugins/outputs/debug \
+		  ../plugins/sources/debug \
+		  ../plugins/formats/debug \
 
-TARGET = mgw.out
-TARGET_TYPE = "app"
+ifneq ($(strip $(PLATFORM)),)
+LIB_DIR += /home/young/workDir/R8_switcher/common/lib \
+		  /home/young/workDir/R8_switcher/yb_rootfs/home/lib \
+		  /home/young/workDir/R8_switcher/media/gw_media/lib
+
 LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats \
 -lmgw-buffer -lmgw-util -lavcodec -lavformat -lavfilter -lavutil -lpostproc -lswscale \
 -lx264 -lfdk-aac -lrtmp -lsrt -lx265 -lswresample -lavdevice \
 -lssl -lcrypto -lz -ljansson -lrt \
--lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto 
+-lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto
+
+else
+LIB_DIR += ../deps/lib/x86
+
+LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats \
+-lmgw-buffer -lmgw-util -lavformat -lavcodec -lavfilter \
+-lswresample -lpostproc -lswscale -lavutil -lx264 \
+-lfdk-aac -lsrt \
+-lssl -lcrypto -lz -ljansson -lrt -lm \
+-lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto
+
+endif
+
+TARGET = mgw.out
+TARGET_TYPE = "app"
 
 include $(PROJECT_ROOT_PATH)/compile_rules.mk

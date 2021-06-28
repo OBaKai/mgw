@@ -62,7 +62,7 @@ DEPFLAGS = -MMD -MP -MF $(OUTPATH)/$(*F).d
 $(OUTPATH)/$(TARGET): $(OBJECT_FILES) 
 ifeq ($(TARGET_TYPE), "app")
 	@-echo $(OBJECT_FILES)
-	$(CC) -o $@ -Wl,-rpath . $(CFLAGS) $^ $(LDFLAGS) $(LIBS)
+	$(CXX) -o $@ -Wl,-rpath . $(CFLAGS) $^ $(LDFLAGS) $(LIBS)
 else
 ifeq ($(TARGET_TYPE), "shared")
 	@-echo $(OBJECT_FILES)
@@ -91,8 +91,15 @@ endif
 
 .PHONY: install
 install:
-	@-mkdir -p $(prefix) > /dev/null
-	cp -rvf $(OUTPATH)/$(TARGET) $(prefix)
+ifeq ($(TARGET_TYPE), "app")
+	@-mkdir -p $(prefix)/bin > /dev/null
+	@-cp -rvf $(OUTPATH)/$(TARGET) $(prefix)/bin/
+else
+ifeq ($(TARGET_TYPE), "shared")
+	@-mkdir -p $(prefix)/lib > /dev/null
+	@-cp -rvf $(OUTPATH)/$(TARGET) $(prefix)/lib/
+endif
+endif
 
 .PHONY: clean
 clean:

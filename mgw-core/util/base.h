@@ -26,7 +26,7 @@ enum {
 	 * Use in creation functions and core subsystem functions.  Places that
 	 * should definitely not fail.
 	 */
-	LOG_ERROR   = 100, 
+	MGW_LOG_ERROR   = 100, 
 
 	/**
 	 * Use if a problem occurs that doesn't affect the program and is
@@ -35,17 +35,17 @@ enum {
 	 * Use in places where failure isn't entirely unexpected, and can
 	 * be handled safely.
 	 */
-	LOG_WARNING = 200,
+	MGW_LOG_WARNING = 200,
 
 	/**
 	 * Informative message to be displayed in the log.
 	 */
-	LOG_INFO    = 300,
+	MGW_LOG_INFO    = 300,
 
 	/**
 	 * Debug message to be used mostly by developers.
 	 */
-	LOG_DEBUG   = 400
+	MGW_LOG_DEBUG   = 400
 };
 
 typedef void (*log_handler_t)(int lvl, const char *msg, va_list args, void *p);

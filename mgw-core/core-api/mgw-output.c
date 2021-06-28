@@ -124,10 +124,10 @@ static void output_reconnect(struct mgw_output *output)
 	ret = pthread_create(&output->reconnect_thread, NULL, &reconnect_thread,
 			     output);
 	if (ret < 0) {
-		blog(LOG_WARNING, "Failed to create reconnect thread");
+		blog(MGW_LOG_WARNING, "Failed to create reconnect thread");
 		os_atomic_set_bool(&output->reconnecting, false);
 	} else {
-		blog(LOG_INFO, "Output '%s':  Reconnecting in %d seconds..",
+		blog(MGW_LOG_INFO, "Output '%s':  Reconnecting in %d seconds..",
 		     output->context.name, output->reconnect_retry_sec);
 
 		//signal_reconnect(output);
@@ -202,7 +202,7 @@ mgw_output_t *mgw_output_create(const char *id,
 	const struct mgw_output_info *info = find_output(id);
 
 	if (!info) {
-		blog(LOG_ERROR, "Output ID: %s not found!", id);
+		blog(MGW_LOG_ERROR, "Output ID: %s not found!", id);
 		output->info.id			= bstrdup(id);
 		output->private_output	= true;
 	} else {
@@ -268,7 +268,7 @@ mgw_output_t *mgw_output_create(const char *id,
 			info->create(output->context.settings, output);
 
 	output->valid = true;
-	blog(LOG_DEBUG, "Output %s (%s) created!", name, id);
+	blog(MGW_LOG_DEBUG, "Output %s (%s) created!", name, id);
 	return output;
 
 failed:
@@ -280,7 +280,7 @@ void mgw_output_destroy(struct mgw_output *output)
 {
 	if (!output)
 		return;
-	blog(LOG_DEBUG, "Output %s destroyed!", output->context.name);
+	blog(MGW_LOG_DEBUG, "Output %s destroyed!", output->context.name);
 
 	if (output->valid && mgw_output_active(output))
 		mgw_output_actual_stop(output, true);
@@ -316,7 +316,7 @@ void mgw_output_addref(mgw_output_t *output)
 void mgw_output_release(mgw_output_t *output)
 {
 	if (!mgw) {
-		blog(LOG_ERROR, "Tried to release a output but mgw core is NULL!");
+		blog(MGW_LOG_ERROR, "Tried to release a output but mgw core is NULL!");
 		return;
 	}
 

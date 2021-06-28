@@ -7,9 +7,9 @@
 #include "util/base.h"
 
 /** Set ring buffer to 10M Bytes by default */
-#define RING_BUFFER_SIZE_DEF        10*1024*1024
+#define RING_BUFFER_SIZE_DEF        20*1024*1024
 /** Set ring buffer to 30 frames by default */
-#define RING_BUFFER_CAP_DEF         30
+#define RING_BUFFER_CAP_DEF         60
 /** Set ring buffer max frame size for getting */
 #define RING_BUFFER_MAX_FRAMESIZE   500*1024
 
@@ -89,8 +89,8 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
         dstr_copy(&info.userid, id);
 
         rb->sort_list = pCreateStreamSort(&info);
-		dstr_free(&info.name);
-		dstr_free(&info.userid);
+		// dstr_free(&info.name);
+		// dstr_free(&info.userid);
 
         if (!rb->sort_list)
             goto error;
@@ -209,7 +209,7 @@ mgw_data_t *mgw_rb_get_encoder_settings(void *data)
 	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
 	param = shared_head->priv_data;
 	if (!param || !param->source_settings){
-		blog(LOG_INFO, "Tried to get encoder settings but source is NULL\n");
+		blog(MGW_LOG_INFO, "Tried to get encoder settings but source is NULL\n");
 		return NULL;
 	}
 
@@ -228,7 +228,7 @@ size_t mgw_rb_get_video_header(void *data, uint8_t **header)
 	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
     param = shared_head->priv_data;
 	if (!param || !param->video_header) {
-        blog(LOG_INFO, "Tried to get encoder video header but source is NULL\n");
+        blog(MGW_LOG_INFO, "Tried to get encoder video header but source is NULL\n");
         return 0;
     }
 
@@ -247,7 +247,7 @@ size_t mgw_rb_get_audio_header(void *data, uint8_t **header)
 	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
     param = shared_head->priv_data;
 	if (!param || !param->audio_header) {
-        blog(LOG_INFO, "Tried to get encoder audio header but source is NULL\n");
+        blog(MGW_LOG_INFO, "Tried to get encoder audio header but source is NULL\n");
         return 0;
     }
 

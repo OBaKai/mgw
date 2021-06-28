@@ -38,7 +38,7 @@ error:
 void mgw_load_all_modules(struct mgw_core *core)
 {
 	if (!core) {
-		blog(LOG_ERROR, "mgw_core is invalid!\n");
+		blog(MGW_LOG_ERROR, "mgw_core is invalid!\n");
 		return;
 	}
 	/* Sources */

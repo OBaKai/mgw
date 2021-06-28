@@ -126,7 +126,7 @@ static bool mgw_source_init(struct mgw_source *source)
 			mgw_data_set_string(buf_settings, "id", source->info.id);
             bool sort = mgw_data_get_bool(buf_settings, "sort");
 
-            blog(LOG_INFO, "create source buffer with sort: %d", sort);
+            blog(MGW_LOG_INFO, "create source buffer with sort: %d", sort);
 		}
 
         struct source_param *param = bzalloc(sizeof(struct source_param));
@@ -146,9 +146,14 @@ static bool mgw_source_init(struct mgw_source *source)
 	source->output_packet	= mgw_source_write_packet;
 	source->update_settings	= mgw_source_update_settings;
 
-	mgw_source_set_audio_extra_data(source, 2, 16, 44100);
 	mgw_data_t *meta = mgw_data_get_obj(source->context.settings, "meta");
 	const char *video_payload = mgw_data_get_string(meta, "vencoderID");
+    uint32_t channels = mgw_data_get_int(meta, "channels");
+    uint32_t samplerate = mgw_data_get_int(meta, "samplerate");
+    uint32_t samplesize = mgw_data_get_int(meta, "samplesize");
+
+    mgw_source_set_audio_extra_data(source, channels, samplesize, samplerate);
+
 	if (!strcmp(video_payload, "avc1"))
 		source->video_payload = ENCID_H264;
 
@@ -165,7 +170,7 @@ static mgw_source_t *mgw_source_create_internal(const char *id,
 	struct mgw_source *source = bzalloc(sizeof(struct mgw_source));
 	const struct mgw_source_info *info = get_source_info(id);
 	if (!info) {
-		blog(LOG_INFO, "Source ID:%s not found! is private source: %d", id, is_private);
+		blog(MGW_LOG_INFO, "Source ID:%s not found! is private source: %d", id, is_private);
 		if (is_private) {
 			source->info.id		= bstrdup(id);
 			source->private_source	= true;
@@ -187,7 +192,7 @@ static mgw_source_t *mgw_source_create_internal(const char *id,
 	if (info) {
 		source->context.data = info->create(source->context.settings, source);
 		if (!source->context.data) {
-			blog(LOG_ERROR, "Failed to create source info: %s", id);
+			blog(MGW_LOG_ERROR, "Failed to create source info: %s", id);
 			goto failed;
 		}
 	}
@@ -196,7 +201,7 @@ static mgw_source_t *mgw_source_create_internal(const char *id,
 	return source;
 
 failed:
-	blog(LOG_ERROR, "Create source %s failed!", name);
+	blog(MGW_LOG_ERROR, "Create source %s failed!", name);
 	mgw_source_destroy(source);
 	return NULL;
 }
@@ -217,7 +222,7 @@ void mgw_source_destroy(struct mgw_source *source)
 	if (!source)
 		return;
 
-	blog(LOG_DEBUG, "%s source %s destroyed!",\
+	blog(MGW_LOG_DEBUG, "%s source %s destroyed!",\
 			source->context.is_private ? "private" : "",\
 			source->context.name);
 
@@ -258,7 +263,7 @@ void mgw_source_addref(mgw_source_t *source)
 void mgw_source_release(mgw_source_t *source)
 {
 	if (!mgw) {
-		blog(LOG_ERROR, "Tried to release a source but mgw core is NULL");
+		blog(MGW_LOG_ERROR, "Tried to release a source but mgw core is NULL");
 		return;
 	}
 	if (!source)
@@ -339,7 +344,7 @@ void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet
 
 			save_packet.size = mgw_avc_get_keyframe(packet->data, packet->size, &save_packet.data);
 
-			blog(LOG_INFO, "Source save key frame(%d)! data[-3]=%02x, "\
+			blog(MGW_LOG_INFO, "Source save key frame(%d)! data[-3]=%02x, "\
 					"data[-2]=%02x, data[-1]=%02x, data[0]=%02x data[1]=%02x",
 					save_packet.size ,save_packet.data[-3], save_packet.data[-2],
 					save_packet.data[-1], save_packet.data[0], save_packet.data[1]);

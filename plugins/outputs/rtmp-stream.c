@@ -89,7 +89,7 @@ static void log_rtmp(int level, const char *fmt, va_list args)
 {
     if (level > RTMP_LOGWARNING)
 		return;
-	blogva(LOG_INFO, fmt, args);
+	blogva(MGW_LOG_INFO, fmt, args);
 }
 
 static void rtmp_stream_init_once(void)
@@ -97,7 +97,7 @@ static void rtmp_stream_init_once(void)
     RTMP_LogSetCallback(log_rtmp);
 	RTMP_LogSetLevel(RTMP_LOGWARNING);
     (void)signal(SIGPIPE, SIG_IGN);
-    blog(LOG_INFO, "rtmp stream initialize once");
+    blog(MGW_LOG_INFO, "rtmp stream initialize once");
 }
 
 static void rtmp_stream_get_default(mgw_data_t *setting)
@@ -259,7 +259,7 @@ static bool discard_recv_data(struct rtmp_stream *stream, size_t size)
         if (ret <= 0)
         {
             int error = errno;
-            blog(LOG_ERROR, "rtmp socket recv error: %d (%d bytes)", error, (int)size);
+            blog(MGW_LOG_ERROR, "rtmp socket recv error: %d (%d bytes)", error, (int)size);
             return false;
         }
     }
@@ -381,7 +381,7 @@ static void *send_thread(void *data)
 	struct encoder_packet packet;
 
 	os_set_thread_name("rtmp-stream: send_thread");
-	blog(LOG_INFO, "rtmp-stream thread running!");
+	blog(MGW_LOG_INFO, "rtmp-stream thread running!");
     while(/*os_sem_wait(stream->send_sem) == 0*/os_atomic_load_bool(&stream->active)) {
 		if (stopping(stream))
 			break;
@@ -406,9 +406,9 @@ static void *send_thread(void *data)
 
 	bfree(packet.data);
 	if (disconnected(stream))
-		blog(LOG_INFO, "Disconnected from %s", stream->path.array);
+		blog(MGW_LOG_INFO, "Disconnected from %s", stream->path.array);
 	else
-		blog(LOG_INFO, "User stopped the stream");
+		blog(MGW_LOG_INFO, "User stopped the stream");
 
 	stream->output->last_error_status = stream->rtmp.last_error_code;
 	RTMP_Close(&stream->rtmp);
@@ -432,7 +432,7 @@ static inline bool reset_semaphore(struct rtmp_stream *stream)
 static int init_send(struct rtmp_stream *stream)
 {
     if (!send_meta_data(stream, 0)) {
-        blog(LOG_ERROR, "Disconnected while attempting to connect to server!");
+        blog(MGW_LOG_ERROR, "Disconnected while attempting to connect to server!");
         stream->output->last_error_status = stream->rtmp.last_error_code;
         return MGW_OUTPUT_DISCONNECTED;
     }
@@ -441,7 +441,7 @@ static int init_send(struct rtmp_stream *stream)
     os_atomic_set_bool(&stream->active, true);
     if (pthread_create(&stream->send_thread, NULL, send_thread, stream) != 0) {
         RTMP_Close(&stream->rtmp);
-        blog(LOG_ERROR, "Failed to create send thread!");
+        blog(MGW_LOG_ERROR, "Failed to create send thread!");
         os_atomic_set_bool(&stream->active, false);
         return MGW_OUTPUT_ERROR;
     }
@@ -451,7 +451,7 @@ static int init_send(struct rtmp_stream *stream)
 
 static bool init_connect(struct rtmp_stream *stream)
 {
-	mgw_data_t *settings;
+	mgw_data_t *settings = NULL;
 
 	if (stopping(stream)) {
 		pthread_join(stream->send_thread, NULL);
@@ -462,13 +462,19 @@ static bool init_connect(struct rtmp_stream *stream)
     const char *path = mgw_data_get_string(output_settings, "path");
     const char *key = mgw_data_get_string(output_settings, "key");
 
+	const char *username = mgw_data_get_string(output_settings, "username");
+	const char *password = mgw_data_get_string(output_settings, "password");
+
 	settings = stream->output->get_encoder_settings(stream->output);
     if (path && key) {
         dstr_copy(&stream->path,        path);
 	    dstr_copy(&stream->key,         key);
     }
-	/*dstr_copy(&stream->username,    mgw_data_get_string(settings, "username"));
-	dstr_copy(&stream->password,    mgw_data_get_string(settings, "password"));
+	if (username && password) {
+		dstr_copy(&stream->username, username);
+		dstr_copy(&stream->password, password);
+	}
+	/*
     dstr_copy(&stream->dest_ip,     mgw_data_get_string(settings, "dest_ip"));
     dstr_copy(&stream->netif_type,  mgw_data_get_string(settings, "netif_type"));
     dstr_copy(&stream->netif_name,  mgw_data_get_string(settings, "netif_name"));
@@ -494,7 +500,7 @@ static bool init_connect(struct rtmp_stream *stream)
 
 static int try_connect(struct rtmp_stream *stream)
 {
-    blog(LOG_INFO, "Connecting to rtmp url: %s  code: %s ...",
+    blog(MGW_LOG_INFO, "Connecting to rtmp url: %s  code: %s ...",
 				stream->path.array, stream->key.array);
 
     if (!RTMP_SetupURL(&stream->rtmp, stream->path.array))
@@ -521,7 +527,7 @@ static int try_connect(struct rtmp_stream *stream)
                 int len = stream->rtmp.m_bindIP.addrLen;
                 bool ipv6 = len == sizeof(struct sockaddr_in6);
                 stream->rtmp.set_netopt = NETIF_IP;
-                blog(LOG_INFO, "Binding to IPv%d", ipv6 ? 6 : 4);
+                blog(MGW_LOG_INFO, "Binding to IPv%d", ipv6 ? 6 : 4);
             }
         } else if (strncmp(stream->netif_type.array, "net_card", 8) == 0) {
             stream->rtmp.clustering_mtu = stream->netif_mtu;
@@ -544,7 +550,7 @@ static int try_connect(struct rtmp_stream *stream)
 
     if (!RTMP_ConnectStream(&stream->rtmp, 0))
         return MGW_OUTPUT_INVALID_STREAM;
-    blog(LOG_INFO, "Connecting rtmp stream success!");
+    blog(MGW_LOG_INFO, "Connecting rtmp stream success!");
     return init_send(stream);
 }
 
@@ -563,7 +569,7 @@ static void *connect_thread(void *data)
 
     if ((ret = try_connect(stream)) != MGW_OUTPUT_SUCCESS) {
         stream->output->signal_stop(stream->output, ret);
-        blog(LOG_INFO, "Connect to %s failed: %d", stream->path.array, ret);
+        blog(MGW_LOG_INFO, "Connect to %s failed: %d", stream->path.array, ret);
     }
 
     if (!stopping(stream))

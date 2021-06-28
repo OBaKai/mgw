@@ -18,51 +18,51 @@
  * 8.system shutdown
  */
 
-static struct mgw_stream *stream = NULL;
+static void *stream = NULL;
 static void *demux = NULL;
 
 void proc_packet(void *data, struct encoder_packet *packet)
 {
-	app_stream_send_private_packet(data, packet);
+	mgw_stream_send_private_packet(data, packet);
 }
 
 int main(int argc, char *argv[])
 {
     mgw_data_t *source_settings = NULL;
     mgw_data_t *output_settings = NULL;
-    blog(LOG_DEBUG, "------------  mgw test start ------------");
-    if (mgw_app_startup("/home/young/workDir/mgw/install/mgw-config.json"))
-        blog(LOG_DEBUG, "mgw startup success");
+    blog(MGW_LOG_DEBUG, "------------  mgw test start ------------");
+    if (mgw_app_startup("mgw-config.json"))
+        blog(MGW_LOG_DEBUG, "mgw startup success");
     else
-        blog(LOG_DEBUG, "mgw startup failed");
+        blog(MGW_LOG_DEBUG, "mgw startup failed");
 
-    stream = app_stream_create("mgw_server_stream1");
+    stream = mgw_stream_create("mgw_server_stream1");
     if (!stream)
         goto error;
 
-    source_settings = mgw_data_create_from_json_file("/home/young/workDir/mgw/install/source-config.json");
-    app_stream_add_private_source(stream, source_settings);
+    source_settings = mgw_data_create_from_json_file("source-config.json");
+    mgw_stream_add_private_source(stream, source_settings);
 
     /** start demux and send packet to source */
-    demux = ff_demux_create("/home/young/workDir/mgw/install/test_mgw.mp4", false);
+    demux = ff_demux_create("test_mgw.mp4", false);
     ff_demux_start(demux, proc_packet, stream);
 
-    output_settings = mgw_data_create_from_json_file("/home/young/workDir/mgw/install/output-config-template.json");
-    app_stream_add_ouptut(stream, output_settings);
+    output_settings = mgw_data_create_from_json_file("output-config-template.json");
+    mgw_stream_add_ouptut(stream, output_settings);
 
-    output_settings = mgw_data_create_from_json_file("/home/young/workDir/mgw/install/output-config-template.json");
+    output_settings = mgw_data_create_from_json_file("output-config-template.json");
     mgw_data_set_int(output_settings, "channel", 2);
     mgw_data_set_string(output_settings, "id", "output2");
     mgw_data_set_string(output_settings, "key", "stream2");
-    app_stream_add_ouptut(stream, output_settings);
+    mgw_stream_add_ouptut(stream, output_settings);
 
 	while('q' != getchar());
 
 error:
 	ff_demux_stop(demux);
 	ff_demux_destroy(demux);
+	mgw_stream_destroy(stream);
 	mgw_app_exit();
-	app_stream_destroy(stream);
-	blog(LOG_DEBUG, "------------  mgw test end ------------");
-    return 0;
+	blog(MGW_LOG_DEBUG, "------------  mgw test end ------------");
+	return 0;
 }

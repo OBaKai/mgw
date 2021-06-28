@@ -1,7 +1,8 @@
 SRC_DIR = .
 
 INC_DIR = ./ ../ \
-		  ../../deps/include \
+		  /home/young/workDir/R8_switcher/media/mp4/include/ffmpeg \
+		  /home/young/workDir/R8_switcher/yb_rootfs/home/include \
 		  ../../mgw-core \
 		  ../../mgw-core/include \
 		  ../outputs

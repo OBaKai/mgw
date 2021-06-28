@@ -1,7 +1,3 @@
-/**
- * 这个文件定义 mgw 内部功能抽象，以及核心数据结构
- * 
-*/
 #ifndef _MGW_CORE_MGW_INTERNAL_H_
 #define _MGW_CORE_MGW_INTERNAL_H_
 

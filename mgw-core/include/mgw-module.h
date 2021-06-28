@@ -15,7 +15,7 @@
 #define module_check_required_val(type, info, val, func)  do { \
 		if ((offsetof(type, val) + sizeof(info->val) > sizeof(type)) || \
 			!info->val) { \
-			blog(LOG_ERROR, "Required value" #val "for %s not found." #func \
+			blog(MGW_LOG_ERROR, "Required value" #val "for %s not found." #func \
 							" failed.", info->id); \
 			goto error; \
 		} \

@@ -472,7 +472,7 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 		if(earliest >= willposi_s && earliest <= willposi_e)
 		{
 			_printd("earliest=%u willposi_s=%u willposi_e=%u", earliest, willposi_s, willposi_e);
-			blog(LOG_INFO, "earliest=%u willposi_s=%u willposi_e=%u", earliest, willposi_s, willposi_e);
+			blog(MGW_LOG_INFO, "earliest=%u willposi_s=%u willposi_e=%u", earliest, willposi_s, willposi_e);
 			tooloog = 1;//check buff too small
 		}
 	}
@@ -490,7 +490,7 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 		if(earliest >= willposi_s || earliest <= willposi_e)
 		{
 			_printd("earliest=%u willposi_s=%u willposi_e=%u", earliest, willposi_s, willposi_e);
-			blog(LOG_INFO, "earliest=%u willposi_s=%u willposi_e=%u", earliest, willposi_s, willposi_e);
+			blog(MGW_LOG_INFO, "earliest=%u willposi_s=%u willposi_e=%u", earliest, willposi_s, willposi_e);
 			tooloog = 1;//check buff too small
 		}
 
@@ -499,7 +499,7 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 		if(tdef - ssbuf->analytime >= 5*60)
 		{
 			_printd("buff_name=%s, userid=%s; uiAnalyTime=====%u", ssbuf->name.array, ssbuf->userid.array, ssbuf->uiAnalyTime);
-			blog(LOG_INFO, "buff_name=%s, userid=%s; uiAnalyTime=%u, now uiSortTime=%u", ssbuf->name.array, ssbuf->userid, ssbuf->uiAnalyTime, ssbuf->uiSortTime);
+			blog(MGW_LOG_INFO, "buff_name=%s, userid=%s; uiAnalyTime=%u, now uiSortTime=%u", ssbuf->name.array, ssbuf->userid, ssbuf->uiAnalyTime, ssbuf->uiSortTime);
 			if(ssbuf->uiAnalyTime < ssbuf->uiSortTime && ssbuf->uiAnalyTime > 0)
 			{
 				unsigned int defTime = ssbuf->uiSortTime - ssbuf->uiAnalyTime;
@@ -533,7 +533,7 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 			if(MIM_SORT_BUFF_LEN < newsize && ssbuf->freesize > newsize)//һ�����
 			{
 				_printd("buff is too big, will remalloc, freesize=%u, %u", ssbuf->freesize, newsize);
-				blog(LOG_INFO, "buff_name=%s, userid=%s; buff is too big, will remalloc, freesize=%u, %u",
+				blog(MGW_LOG_INFO, "buff_name=%s, userid=%s; buff is too big, will remalloc, freesize=%u, %u",
                             ssbuf->name.array, ssbuf->userid.array, ssbuf->freesize, newsize);
 				void *rf = RemallocSortBuff(ssbuf, newsize);
 				if(rf)
@@ -585,7 +585,7 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 		if(ssbuf->datasize > MAX_SORT_BUFF_LEN)
 		{
 			_printd("Address to repeat;will clean buff");
-			blog(LOG_ERROR, "buff_name=%s, userid=%s; Address to repeat;Valid data [%u], will clean buff",
+			blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; Address to repeat;Valid data [%u], will clean buff",
                         ssbuf->name.array, ssbuf->userid.array, ssbuf->uiValidLen);
 			printfsort(ssbuf);
 			CleanSortBuff(ssbuf);
@@ -594,14 +594,14 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 		{
 			datasize = ssbuf->datasize*3/2;
 			_printd("Address to repeat;Valid data [%u], will remalloc, %u:%u", ssbuf->uiValidLen, datasize, ssbuf->datasize);
-			blog(LOG_ERROR, "buff_name=%s, userid=%s; Address to repeat;Valid data [%u], will remalloc, %u:%u",
+			blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; Address to repeat;Valid data [%u], will remalloc, %u:%u",
                             ssbuf->name.array, ssbuf->userid.array, ssbuf->uiValidLen, datasize, ssbuf->datasize);
 			printfsort(ssbuf);
 			void *rf = RemallocSortBuff(ssbuf, datasize);
 			if(!rf)
 			{
 				_printd("Address to repeat, will clean buff");
-				blog(LOG_ERROR, "buff_name=%s, userid=%s; Address to repeat, will clean buff", ssbuf->name.array, ssbuf->userid.array);
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; Address to repeat, will clean buff", ssbuf->name.array, ssbuf->userid.array);
 				printfsort(ssbuf);
 				CleanSortBuff(ssbuf);
 			}
@@ -644,7 +644,7 @@ void DelectStreamSort(void *agrv)
 void CleanStreamSort(void *agrv)
 {
 	SC_ssbuff *ssbuf = (SC_ssbuff *)agrv;
-	blog(LOG_ERROR, "buff_name=%s, userid=%s; clean stream sort", ssbuf->name.array, ssbuf->userid.array);
+	blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; clean stream sort", ssbuf->name.array, ssbuf->userid.array);
 	CleanSortBuff(ssbuf);
 }
 
@@ -670,7 +670,7 @@ int PopFrameStreamSort(SC_ssbuff *ssbuf)
 			if((ret = CFrameaddrList((void **)&ssbuf->frameaddr, 0, oposition, 2)) < 0)//�����ַList��Ӧ�ڵ�
 			{
 				_printd("CFrameaddrList return err:%d", ret);
-				blog(LOG_INFO,"CFrameaddrList return err:%d", ret);
+				blog(MGW_LOG_INFO,"CFrameaddrList return err:%d", ret);
 				if(ret < 0)
 				{
 					break;
@@ -725,7 +725,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 	if(iframe->frame_len >= (ssbuf->datasize/2))
 	{
 		_printd("buff_name=%s, userid=%s; the freame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
-		blog(LOG_ERROR, "buff_name=%s, userid=%s; the freame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
+		blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; the freame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
 		return -1;
 	}
 
@@ -755,7 +755,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 		if((revl = CFrameaddrList((void **)&ssbuf->frameaddr, 0, 0, 0)) < 0)
 		{
 			_printd("buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
-			blog(LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
+			blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
 			if(revl < 0)
 			{
 				ssbuf->phead = NULL;
@@ -775,7 +775,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			ssbuf->u32LateFrameDrop++;
 			if(0 == (ssbuf->u32LateFrameCount % 50))
 			{
-				blog(LOG_ERROR, "buff_name=%s, userid=%s; time:%llu is too late!! %llu -%llu=%u is larger than %d, drop %u", 
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; time:%llu is too late!! %llu -%llu=%u is larger than %d, drop %u", 
 								ssbuf->name.array, ssbuf->userid.array, iframe->timestamp, ssbuf->maxtimestamp,
 								iframe->timestamp, timedef, ssbuf->uiMaxSortTime, ssbuf->u32LateFrameCount);
 				_printd("buff_name=%s, userid=%s; time:%llu is too late!! %llu -%llu=%u is larger than %d, drop %u",
@@ -800,7 +800,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
  			_printd("buff_name=%s, userid=%s; time:%llu is too late!! premin=%llu;, drop %u",
                     ssbuf->name.array, ssbuf->userid.array, iframe->timestamp, ssbuf->premintimestamp, ssbuf->u32LateFrameCount);
 #if 0
-			tlog(TLOG_ERROR, "buff_name=%s, userid=%s; time:%llu is too late!! premin=%llu;, drop %u", ssbuf->name, ssbuf->userid, iframe->timestamp, ssbuf->premintimestamp, \
+			tlog(TMGW_LOG_ERROR, "buff_name=%s, userid=%s; time:%llu is too late!! premin=%llu;, drop %u", ssbuf->name, ssbuf->userid, iframe->timestamp, ssbuf->premintimestamp, \
 				ssbuf->u32LateFrameCount);
 #endif
 
@@ -821,7 +821,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 						ssbuf->name.array, ssbuf->userid.array, ssbuf->uiSortTime, timedef);
 					if(nowtime - ssbuf->analytime >= 2)//��ֹ��־����
 					{
-						blog(LOG_INFO, "buff_name=%s, userid=%s; Delay increase,now uiSortTime=%u us, will add %u us", 
+						blog(MGW_LOG_INFO, "buff_name=%s, userid=%s; Delay increase,now uiSortTime=%u us, will add %u us", 
 							ssbuf->name.array, ssbuf->userid.array, ssbuf->uiSortTime, timedef);
 					}
 					ssbuf->analytime = nowtime;//���¼���ʱ��
@@ -830,7 +830,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			}
 			else
 			{
-				blog(LOG_ERROR, "buff_name=%s, userid=%s;the sort err, premin=%llu, nowmin=%llu, recvtime=%llu", \
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s;the sort err, premin=%llu, nowmin=%llu, recvtime=%llu", \
 					ssbuf->name.array, ssbuf->userid.array, ssbuf->premintimestamp, ssbuf->mintimestamp, iframe->timestamp);
 			}
 			return -1;
@@ -846,7 +846,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 		if((revl = CFrameaddrList((void **)&ssbuf->frameaddr, position, 0, 0)) < 0)
 		{
 			_printd("buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
-			blog(LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
+			blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
 			if(revl < 0)
 			{
 				free(nd);
@@ -873,7 +873,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 					ssbuf->name.array, ssbuf->userid.array, ssbuf->uiSortTime, timedef);
 				if(nowtime - ssbuf->analytime >= 2)//��ֹ��־����
 				{
-					blog(LOG_INFO, "buff_name=%s, userid=%s; Delay increase,now uiSortTime=%u us, will add timedef=%u us", 
+					blog(MGW_LOG_INFO, "buff_name=%s, userid=%s; Delay increase,now uiSortTime=%u us, will add timedef=%u us", 
 						ssbuf->name.array, ssbuf->userid.array, ssbuf->uiSortTime, timedef);
 				}
 				ssbuf->analytime = nowtime;//���¼���ʱ��
@@ -918,7 +918,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 	 			_printd("buff_name=%s, userid=%s; time:%llu is too early !! %llu - %llu=%u, drop %u", 
 					ssbuf->name.array, ssbuf->userid.array, iframe->timestamp, iframe->timestamp, ssbuf->mintimestamp, \
 					timedef, ssbuf->u32EarlyFrameCount);
-				blog(LOG_ERROR, "buff_name=%s, userid=%s; time:%llu is too early !! %llu - %llu=%u, drop %u", 
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; time:%llu is too early !! %llu - %llu=%u, drop %u", 
 					ssbuf->name.array, ssbuf->userid.array, iframe->timestamp, iframe->timestamp, ssbuf->mintimestamp, \
 					timedef, ssbuf->u32EarlyFrameCount);
 			}
@@ -945,7 +945,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			if((revl = CFrameaddrList((void **)&ssbuf->frameaddr, position, oposition, 1)) < 0)
 			{
 				_printd("buff_name=%s, userid=%s; oposition=%u; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,oposition, revl);
-				blog(LOG_ERROR, "buff_name=%s, userid=%s; oposition=%u; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,oposition, revl);
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; oposition=%u; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,oposition, revl);
 				if(revl < 0)
 				{
 					return -1;
@@ -962,7 +962,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			if(ret < 0)
 			{
 				_printd("buff_name=%s, userid=%s; Datacallback return err:%d", ssbuf->name.array, ssbuf->userid.array,ret);
-				blog(LOG_ERROR, "buff_name=%s, userid=%s; Datacallback return err:%d", ssbuf->name.array, ssbuf->userid.array,ret);
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; Datacallback return err:%d", ssbuf->name.array, ssbuf->userid.array,ret);
 				//return ret;
 			}
 			
@@ -986,7 +986,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			if((revl = CFrameaddrList((void **)&ssbuf->frameaddr, position, 0, 0)) < 0)
 			{
 				_printd("buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,revl);
-				blog(LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,revl);
+				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,revl);
 				if(revl < 0)
 				{
 					free(nd);
