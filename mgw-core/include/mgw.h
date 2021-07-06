@@ -67,7 +67,7 @@ mgw_data_t *mgw_save_output(mgw_output_t *source);
 mgw_output_t *mgw_load_output(mgw_data_t *data);
 
 typedef void (*mgw_load_output_cb)(void *private_data, mgw_output_t *source);
-void mgw_laod_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *private_data);
+void mgw_load_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *private_data);
 mgw_data_array_t *mgw_save_outputs(void);
 
 
@@ -108,11 +108,7 @@ void mgw_source_set_audio_extra_data(mgw_source_t *source,
 /***********************************
  * Output operations
  **********************************/
-/**
- * Creates an output.
- *
- *   Outputs allow outputting to file, outputting to network.
- */
+
 mgw_output_t *mgw_output_create(const char *id,
 				const char *name, mgw_data_t *settings);
 
@@ -129,11 +125,11 @@ void mgw_weak_output_release(mgw_weak_output_t *weak);
 mgw_output_t *mgw_output_get_ref(mgw_output_t *output);
 mgw_weak_output_t *mgw_output_get_weak_output(mgw_output_t *output);
 mgw_output_t *mgw_weak_output_get_output(mgw_weak_output_t *weak);
-
 bool mgw_weak_output_references_output(mgw_weak_output_t *weak,
 		mgw_output_t *output);
 
 const char *mgw_output_get_name(const mgw_output_t *output);
+mgw_data_t *mgw_output_get_state(mgw_output_t *output);
 
 bool mgw_output_start(mgw_output_t *output);
 void mgw_output_stop(mgw_output_t *output);

@@ -44,6 +44,7 @@ static bool mgw_output_actual_start(mgw_output_t *output)
 	if (output->valid && output->context.data)
 		success = output->info.start(output->context.data);
 
+	os_atomic_set_bool(&output->actived, success);
 	return success;
 }
 
@@ -59,12 +60,12 @@ static void mgw_output_actual_stop(mgw_output_t *output, bool force)
 			pthread_join(output->reconnect_thread, NULL);
 	}
 
+    os_event_signal(output->stopping_event);
 	if (force && output->context.data) {
+        blog(MGW_LOG_INFO, "------------>>> will call info.stop  ");
 		output->info.stop(output->context.data);
-
 	} else if (reconnecting(output)) {
 		output->stop_code = MGW_OUTPUT_SUCCESS;
-		os_event_signal(output->stopping_event);
 	}
 	os_atomic_set_bool(&output->actived, false);
 }
@@ -152,12 +153,14 @@ static void mgw_output_signal_stop(mgw_output_t *output, int code)
 		output_reconnect(output);
 	} else {
 		os_atomic_set_bool(&output->actived, false);
+        os_event_signal(output->stopping_event);
+        blog(MGW_LOG_INFO, "------------------>> signal stop output");
 	}
 }
 
 static bool mgw_output_source_is_ready(mgw_output_t *output)
 {
-	return output && output->valid && output->buffer;
+	return !!output && output->valid && !!output->buffer;
 }
 
 static mgw_data_t *mgw_output_get_encoder_settings(mgw_output_t *output)
@@ -254,6 +257,9 @@ mgw_output_t *mgw_output_create(const char *id,
 	if (!output->buffer)
 		goto failed;
 
+	if (buf_settings)
+		mgw_data_release(buf_settings);
+
 	/** initlialize callback */
 	output->active			= mgw_output_active;
 	output->signal_stop		= mgw_output_signal_stop;
@@ -280,14 +286,17 @@ void mgw_output_destroy(struct mgw_output *output)
 {
 	if (!output)
 		return;
+
 	blog(MGW_LOG_DEBUG, "Output %s destroyed!", output->context.name);
 
 	if (output->valid && mgw_output_active(output))
 		mgw_output_actual_stop(output, true);
 
 	os_event_wait(output->stopping_event);
-	if (output->context.data)
-		output->info.destroy(output->context.data);
+	if (output->context.data) {
+        blog(MGW_LOG_INFO, "----------->> call rtmp stream destroy");
+        output->info.destroy(output->context.data);
+    }
 	/** Destroy buffer */
 	if (output->buffer)
 		mgw_rb_destroy(output->buffer);
@@ -297,12 +306,11 @@ void mgw_output_destroy(struct mgw_output *output)
 
 	/** destroy output resource */
 	mgw_context_data_free(&output->context);
-	// if (output->control)
-	// 	bfree(output->control);
 
 	if (output->private_output)
 		bfree((void*)output->info.id);
 
+	blog(MGW_LOG_INFO, "-------------->> free output!\n");
 	bfree(output);
 }
 
@@ -407,4 +415,39 @@ void mgw_output_stop(mgw_output_t *output)
 	if (!output)
 		return;
 	mgw_output_actual_stop(output, true);
+}
+
+mgw_data_t *mgw_output_get_state(mgw_output_t *output)
+{
+    mgw_data_t *state_info = NULL;
+	int push_state = 0;
+    const char *username = NULL;
+	bool authen = false;
+
+    if (!output)
+        return NULL;
+
+	if (!mgw_output_source_is_ready(output))
+		push_state = MGW_OUTPUT_STOPED;
+	else if (mgw_output_active(output))
+		push_state = MGW_OUTPUT_STREAMING;
+	else if (reconnecting(output))
+		push_state = MGW_OUTPUT_RECONNECTING;
+	else if (mgw_output_source_is_ready(output) &&
+			!mgw_output_active(output))
+		push_state = MGW_OUTPUT_CONNECTING;
+
+	username = mgw_data_get_string(output->context.settings, "username");
+	if (username && strlen(username)) {
+		blog(MGW_LOG_INFO, "user name:%s ", username);
+		authen = true;
+	}
+
+    state_info = mgw_data_create();
+    mgw_data_set_bool(state_info, "active", mgw_output_active(output));
+	mgw_data_set_int(state_info, "state", push_state);
+	mgw_data_set_int(state_info, "failed_cnt", os_atomic_load_long(&output->failed_count));
+	mgw_data_set_bool(state_info, "authen", authen);
+
+    return state_info;
 }

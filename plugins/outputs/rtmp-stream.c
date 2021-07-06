@@ -34,6 +34,7 @@ struct rtmp_stream {
     uint64_t        total_bytes_sent;
     uint64_t        audio_drop_frames, video_drop_frames;
     uint64_t        start_dts_offset;
+	volatile int64_t update_meta_time;
 
     volatile bool   connecting;
     pthread_t       connect_thread;
@@ -82,10 +83,10 @@ static inline bool disconnected(struct rtmp_stream *stream)
 static inline bool stream_valid(void *data)
 {
     struct rtmp_stream *stream = data;
-    return !!data && !!(&stream->output);
+    return !!data && !!stream->output;
 }
 
-static void log_rtmp(int level, const char *fmt, va_list args)
+static inline void log_rtmp(int level, const char *fmt, va_list args)
 {
     if (level > RTMP_LOGWARNING)
 		return;
@@ -144,7 +145,10 @@ static const char *rtmp_stream_get_name(void *data)
 static void rtmp_stream_destroy(void *data)
 {
     struct rtmp_stream *stream = data;
+	RTMP *r = (RTMP*)&stream->rtmp;
+    int idx = 0;
     /* stop connecting */
+    blog(MGW_LOG_INFO, "--------->> stop and release rtmp stream");
     if (stopping(stream) || !connecting(stream)) {
         pthread_join(stream->send_thread, NULL);
     } else if (connecting(stream) || active(stream)) {
@@ -160,16 +164,29 @@ static void rtmp_stream_destroy(void *data)
         }
     }
 
+	for (idx = 0; idx < r->Link.nStreams; idx++)
+	{
+		if (r->Link.streams[idx].playpath.av_val)
+		{
+			free(r->Link.streams[idx].playpath.av_val);
+			r->Link.streams[idx].playpath.av_val = NULL;
+		}
+	}
+	r->Link.curStreamIdx = 0;
+	r->Link.nStreams = 0;
+
     dstr_free(&stream->path);
     dstr_free(&stream->key);
     dstr_free(&stream->dest_ip);
     dstr_free(&stream->username);
     dstr_free(&stream->password);
     dstr_free(&stream->netif_name);
+	dstr_free(&stream->encoder_name);
 
     os_event_destroy(stream->stop_event);
 	os_sem_destroy(stream->send_sem);
     bfree(stream);
+    blog(MGW_LOG_INFO, "--------->>> destroy rtmp stream!");
 }
 
 static void *rtmp_stream_create(mgw_data_t *setting, mgw_output_t *output)
@@ -386,27 +403,28 @@ static void *send_thread(void *data)
 		if (stopping(stream))
 			break;
 
-        usleep(10 * 1000);
 		if (!stream->output->get_next_encoder_packet(stream->output, &packet))
 			continue;
 
-		if (!stream->sent_headers) {
+		if (!stream->sent_headers || packet.priority == FRAME_PRIORITY_LOW) {
 			if (!send_headers(stream)) {
 				os_atomic_set_bool(&stream->disconnected, true);
+				bfree(packet.data);
 				break;
 			}
 		}
 
 		if (send_packet(stream, &packet, false, packet.track_idx) < 0) {
 			os_atomic_set_bool(&stream->disconnected, true);
+			bfree(packet.data);
 			break;
 		}
 		bfree(packet.data);
+		//usleep(50);
 	}
 
-	bfree(packet.data);
 	if (disconnected(stream))
-		blog(MGW_LOG_INFO, "Disconnected from %s", stream->path.array);
+		blog(MGW_LOG_INFO, "Disconnected from %s/%s", stream->path.array, stream->key.array);
 	else
 		blog(MGW_LOG_INFO, "User stopped the stream");
 
@@ -415,6 +433,7 @@ static void *send_thread(void *data)
 	if (!stopping(stream)) {
 		pthread_detach(stream->send_thread);
 		stream->output->signal_stop(stream->output, MGW_OUTPUT_DISCONNECTED);
+        blog(MGW_LOG_INFO, "-------->> rtmp stream signal stop!");
 	}
 
 	stream->sent_headers = false;
@@ -458,11 +477,10 @@ static bool init_connect(struct rtmp_stream *stream)
 	}
     os_atomic_set_bool(&stream->disconnected, false);
 
-    mgw_data_t *output_settings = stream->output->context.settings;
+    mgw_data_t *output_settings = mgw_data_newref(stream->output->context.settings);
     const char *path = mgw_data_get_string(output_settings, "path");
     const char *key = mgw_data_get_string(output_settings, "key");
-
-	const char *username = mgw_data_get_string(output_settings, "username");
+    const char *username = mgw_data_get_string(output_settings, "username");
 	const char *password = mgw_data_get_string(output_settings, "password");
 
 	settings = stream->output->get_encoder_settings(stream->output);
@@ -474,6 +492,7 @@ static bool init_connect(struct rtmp_stream *stream)
 		dstr_copy(&stream->username, username);
 		dstr_copy(&stream->password, password);
 	}
+
 	/*
     dstr_copy(&stream->dest_ip,     mgw_data_get_string(settings, "dest_ip"));
     dstr_copy(&stream->netif_type,  mgw_data_get_string(settings, "netif_type"));
@@ -494,6 +513,7 @@ static bool init_connect(struct rtmp_stream *stream)
 
     dstr_copy(&stream->encoder_name, "FMLE/3.0 (compatible; FMSc/1.0)");
 
+	mgw_data_release(output_settings);
 	mgw_data_release(settings);
 	return true;
 }
@@ -582,8 +602,10 @@ static void *connect_thread(void *data)
 static bool rtmp_stream_start(void *data)
 {
     struct rtmp_stream *stream = data;
-    if (!stream->output->source_is_ready(stream->output))
-        return false;
+    if (!stream->output->source_is_ready(stream->output)) {
+		blog(MGW_LOG_ERROR, "source is not ready!");
+		return false;
+    }
 
     os_atomic_set_bool(&stream->connecting, true);
 	return pthread_create(&stream->connect_thread, NULL, connect_thread, stream) == 0;
@@ -592,7 +614,7 @@ static bool rtmp_stream_start(void *data)
 static void rtmp_stream_stop(void *data)
 {
     struct rtmp_stream *stream = data;
-    if (stream_valid(data))
+    if (!stream_valid(data))
 		return;
 
 	if (stopping(stream))

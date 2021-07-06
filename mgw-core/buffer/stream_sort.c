@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "util/base.h"
+#include "util/bmem.h"
 
 #define DEFAULT_SORT_TIME	1000*1000//us
 #define MAX_SORT_BUFF_LEN	8*1024*1024//byte
@@ -16,6 +17,7 @@ typedef struct _SC_ssnode_
 	unsigned int len;
 	unsigned long long timestamp;
 	char frametype;
+    int priority;
 	/* Flag of valid frame */
 	char ucValidFlag;
 	char reserved[2];
@@ -130,12 +132,13 @@ void *pCreateStreamSort(RegisterSortInfo *info)
 	return (void *)pssbuf;	
 }
 
-int FillTheNode(SC_ssnode *nd, char *position, unsigned int frame_len, unsigned long long timestamp, char frametype)
+int FillTheNode(SC_ssnode *nd, char *position, unsigned int frame_len, unsigned long long timestamp, char frametype, int priority)
 {
 	nd->frametype = frametype;
 	nd->len = frame_len;
 	nd->position = position;
 	nd->timestamp = timestamp;
+    nd->priority = priority;
 	nd->ucValidFlag = 1;
 	return 0;
 }
@@ -193,6 +196,8 @@ unsigned int MemcpyToSortBuff(SC_ssbuff *ssbuf, char *pframe, unsigned int frame
 {
 	unsigned int position = ssbuf->position;
 	unsigned int wpos = ssbuf->position;
+    //_printd("data: data[-3]:%02x, data[-2]:%02x, data[-1]:%02x, data[0]:%02x, data[1]:%02x\n",\
+    //    pframe[-3], pframe[-2], pframe[-1], pframe[0], pframe[1]);
 	if(position + frame_len <= ssbuf->datasize)
 	{
 		memcpy(ssbuf->pdata + position, pframe, frame_len);
@@ -229,11 +234,11 @@ void CleanSortBuff(SC_ssbuff *pssbuf)
 	while(p && ar)
 	{
 		n = p->next;
-		free(p);
+		bfree(p);
 		p = n;
 
 		nar = ar->next;
-		free(ar);
+		bfree(ar);
 		ar = nar;
 	}
 
@@ -318,7 +323,7 @@ void *RemallocSortBuff(SC_ssbuff *ssbuf, unsigned int uiSize)
 	newssbuf->uiSortTimeBak = ssbuf->uiSortTimeBak;
 	newssbuf->freetime = time(NULL);
 	newssbuf->analytime = time(NULL);
-	free(ssbuf);
+	bfree(ssbuf);
 	return buff;
 }
 
@@ -412,7 +417,7 @@ int CFrameaddrList(void **had, unsigned int iposition, unsigned int oposition, i
 			*had = h = fd->next;
 		}
 		
-		free(fd);
+		bfree(fd);
 	}
 
 	return 0;
@@ -499,7 +504,7 @@ int CheckStreambuff(void **agrv, unsigned int frame_len)
 		if(tdef - ssbuf->analytime >= 5*60)
 		{
 			_printd("buff_name=%s, userid=%s; uiAnalyTime=====%u", ssbuf->name.array, ssbuf->userid.array, ssbuf->uiAnalyTime);
-			blog(MGW_LOG_INFO, "buff_name=%s, userid=%s; uiAnalyTime=%u, now uiSortTime=%u", ssbuf->name.array, ssbuf->userid, ssbuf->uiAnalyTime, ssbuf->uiSortTime);
+			blog(MGW_LOG_INFO, "buff_name=%s, userid=%s; uiAnalyTime=%u, now uiSortTime=%u", ssbuf->name.array, ssbuf->userid.array, ssbuf->uiAnalyTime, ssbuf->uiSortTime);
 			if(ssbuf->uiAnalyTime < ssbuf->uiSortTime && ssbuf->uiAnalyTime > 0)
 			{
 				unsigned int defTime = ssbuf->uiSortTime - ssbuf->uiAnalyTime;
@@ -638,7 +643,7 @@ void DelectStreamSort(void *agrv)
     dstr_free(&ssbuf->name);
     dstr_free(&ssbuf->userid);
 	
-	free(ssbuf);
+	bfree(ssbuf);
 }
 
 void CleanStreamSort(void *agrv)
@@ -679,7 +684,8 @@ int PopFrameStreamSort(SC_ssbuff *ssbuf)
 			oframe.frame = nd->position;
 			oframe.frame_len = nd->len;
 			oframe.frametype = nd->frametype;
-			oframe.timestamp = nd->timestamp;			
+			oframe.timestamp = nd->timestamp;
+            oframe.priority  = nd->priority;
 			ssbuf->premintimestamp = nd->timestamp;
 			ret = ssbuf->Datacallback(ssbuf->puser, &oframe);
 			if(ret < 0)
@@ -699,7 +705,7 @@ int PopFrameStreamSort(SC_ssbuff *ssbuf)
 			}
 			//nd->prev->next = ssbuf->phead;
 			nd->position = NULL;
-			free(nd);
+			bfree(nd);
 			
 			ssbuf->mintimestamp = ssbuf->phead->timestamp;
 		}
@@ -749,7 +755,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 		ssbuf->premintimestamp = ssbuf->mintimestamp;
 		ssbuf->phead = nd;
 		MemcpyToSortBuff(ssbuf, iframe->frame, iframe->frame_len);
-		FillTheNode(nd, ssbuf->pdata, iframe->frame_len, iframe->timestamp, iframe->frametype);
+		FillTheNode(nd, ssbuf->pdata, iframe->frame_len, iframe->timestamp, iframe->frametype, iframe->priority);
 		nd->prev = nd;
 		nd->next = NULL;
 		if((revl = CFrameaddrList((void **)&ssbuf->frameaddr, 0, 0, 0)) < 0)
@@ -759,7 +765,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			if(revl < 0)
 			{
 				ssbuf->phead = NULL;
-				free(nd);
+				bfree(nd);
 				return -1;
 			}
 		}
@@ -767,7 +773,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 	}
 
 	if(iframe->timestamp < ssbuf->maxtimestamp)
-	{	
+	{
 		timedef = ssbuf->maxtimestamp - iframe->timestamp;
  		if(timedef > ssbuf->uiMaxSortTime)
  		{
@@ -842,14 +848,14 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			return -1;
 		}
 		position = MemcpyToSortBuff(ssbuf, iframe->frame, iframe->frame_len);		
-		FillTheNode(nd, ssbuf->pdata + position, iframe->frame_len, iframe->timestamp, iframe->frametype);
+		FillTheNode(nd, ssbuf->pdata + position, iframe->frame_len, iframe->timestamp, iframe->frametype, iframe->priority);
 		if((revl = CFrameaddrList((void **)&ssbuf->frameaddr, position, 0, 0)) < 0)
 		{
 			_printd("buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
 			blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array, revl);
 			if(revl < 0)
 			{
-				free(nd);
+				bfree(nd);
 				return -1;
 			}
 		}	
@@ -957,6 +963,7 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 			oframe.frame_len = nd->len;
 			oframe.frametype = nd->frametype;
 			oframe.timestamp = nd->timestamp;
+            oframe.priority  = nd->priority;
 			ssbuf->premintimestamp = nd->timestamp;
 			ret = ssbuf->Datacallback(ssbuf->puser, &oframe);
 			if(ret < 0)
@@ -989,14 +996,14 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 				blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; CFrameaddrList return err:%d", ssbuf->name.array, ssbuf->userid.array,revl);
 				if(revl < 0)
 				{
-					free(nd);
+					bfree(nd);
 					return -1;
 				}
 			}
 		}
 		ssbuf->uiValidLen += iframe->frame_len;
 		//position = ssbuf->position - iframe->frame_len;
-		FillTheNode(nd, ssbuf->pdata + position, iframe->frame_len, iframe->timestamp, iframe->frametype);
+		FillTheNode(nd, ssbuf->pdata + position, iframe->frame_len, iframe->timestamp, iframe->frametype, iframe->priority);
 		InsertSortEnd(ssbuf->phead, nd);
 		ssbuf->uiPutFrameCount++;
 		ssbuf->maxtimestamp = iframe->timestamp;

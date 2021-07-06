@@ -15,19 +15,19 @@ LIB_DIR = . \
 		  ../plugins/sources/debug \
 		  ../plugins/formats/debug \
 
-ifneq ($(strip $(PLATFORM)),)
-LIB_DIR += /home/young/workDir/R8_switcher/common/lib \
-		  /home/young/workDir/R8_switcher/yb_rootfs/home/lib \
-		  /home/young/workDir/R8_switcher/media/gw_media/lib
+ifeq ($(strip $(PLATFORM)),)
+LIB_DIR += ../deps/lib/x86
 
 LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats \
 -lmgw-buffer -lmgw-util -lavcodec -lavformat -lavfilter -lavutil -lpostproc -lswscale \
--lx264 -lfdk-aac -lrtmp -lsrt -lx265 -lswresample -lavdevice \
+-lswresample -lavdevice -lx264 -lfdk-aac -lrtmp -lsrt -lx265 \
 -lssl -lcrypto -lz -ljansson -lrt \
 -lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto
 
 else
-LIB_DIR += ../deps/lib/x86
+LIB_DIR += /home/young/workDir/R8_switcher/common/lib \
+		  /home/young/workDir/R8_switcher/yb_rootfs/home/lib \
+		  /home/young/workDir/R8_switcher/media/gw_media/lib
 
 LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats \
 -lmgw-buffer -lmgw-util -lavformat -lavcodec -lavfilter \

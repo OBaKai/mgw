@@ -28,7 +28,7 @@ char *CreateShareMemory(int *Fd, const char *name, int size, int frames, void *p
 	if( iFd == -1 )
 	{
 		printf("key=%d size=%d/%d\n", key, size, uiShareSize);
-		perror("shmget alloc share mem error:");
+		printf("shmget alloc share mem error:%s\n", strerror(errno));
 		return NULL;
 	}
 //	assert( iFd != -1 );
@@ -64,7 +64,7 @@ void DeleteShareMemory(void *head)
 
 	struct shmid_ds buf;
 	shmctl(pbuf->iFd, IPC_STAT, &buf);
-	printf("buf.shm_nattch=%d", buf.shm_nattch);
+	printf("buf.shm_nattch=%lu", buf.shm_nattch);
 	if (buf.shm_nattch == 0)
 	{
 		shmctl(pbuf->iFd, IPC_RMID, NULL);

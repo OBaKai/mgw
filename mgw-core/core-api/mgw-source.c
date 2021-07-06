@@ -70,7 +70,7 @@ void mgw_source_set_audio_extra_data(mgw_source_t *source,
 
 	if (source->private_source) {
 		header_size = mgw_get_aac_lc_header(channels, samplesize, samplerate, &header);
-		bmem_copy(&source->audio_header, header, header_size);
+		bmem_copy(&source->audio_header, (const char *)header, header_size);
         bfree(header);
 	}
 }
@@ -84,10 +84,10 @@ static size_t source_get_header_internal(mgw_source_t *source,
 
 	} else if (source->private_source) {
 		if (ENCODER_VIDEO == type) {
-			*header = source->video_header.array;
+			*header = (uint8_t *)source->video_header.array;
 			header_size = source->video_header.len;
 		} else {
-			*header = source->audio_header.array;
+			*header = (uint8_t *)source->audio_header.array;
 			header_size = source->audio_header.len;
 		}
 	}
@@ -112,7 +112,6 @@ size_t mgw_source_get_audio_header(void *source, uint8_t **header)
 
 static bool mgw_source_init(struct mgw_source *source)
 {
-	bool success = false;
 	source->control = bzalloc(sizeof(struct mgw_weak_source));
 	source->control->source = source;
 	
@@ -125,7 +124,6 @@ static bool mgw_source_init(struct mgw_source *source)
 			mgw_data_set_string(buf_settings, "name", source->context.name);
 			mgw_data_set_string(buf_settings, "id", source->info.id);
             bool sort = mgw_data_get_bool(buf_settings, "sort");
-
             blog(MGW_LOG_INFO, "create source buffer with sort: %d", sort);
 		}
 
@@ -140,6 +138,7 @@ static bool mgw_source_init(struct mgw_source *source)
 			return false;
 
 		mgw_data_set_obj(source->context.settings, "buffer", buf_settings);
+        mgw_data_release(buf_settings);
 	}
 
 	source->active			= mgw_source_active;
@@ -157,7 +156,7 @@ static bool mgw_source_init(struct mgw_source *source)
 	if (!strcmp(video_payload, "avc1"))
 		source->video_payload = ENCID_H264;
 
-	mgw_context_data_insert(&source->context, 
+	mgw_context_data_insert(&source->context,
 					&mgw->data.sources_mutex,
 					&mgw->data.first_source);
 
@@ -172,11 +171,11 @@ static mgw_source_t *mgw_source_create_internal(const char *id,
 	if (!info) {
 		blog(MGW_LOG_INFO, "Source ID:%s not found! is private source: %d", id, is_private);
 		if (is_private) {
-			source->info.id		= bstrdup(id);
+			source->info.id			= bstrdup(id);
 			source->private_source	= true;
 		}
 	} else {
-		source->info		= *info;
+		source->info			= *info;
 		source->private_source	= false;
 	}
 
@@ -241,15 +240,16 @@ void mgw_source_destroy(struct mgw_source *source)
 		mgw_rb_destroy(source->buffer);
 	}
 
-	// if (source->control) {
-	// 	bfree(source->control);
-	// }
-    bmem_free(&source->audio_header);
-    bmem_free(&source->video_header);
+	if (source->control) {
+		bfree(source->control);
+	}
+
+	bmem_free(&source->audio_header);
+	bmem_free(&source->video_header);
 
 	if (source->private_source)
 		bfree((void*)source->info.id);
-
+    blog(MGW_LOG_INFO, "-------------->> free source!\n");
 	bfree(source);
 }
 
@@ -339,12 +339,13 @@ void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet
 			size = mgw_parse_avc_header(&header, packet->data, packet->size);
 			if (size > 4 && header) {
 				mgw_source_set_video_extra_data(source, header, size);
+				save_packet.priority = FRAME_PRIORITY_LOW;
 			}
 			bfree(header);
 
 			save_packet.size = mgw_avc_get_keyframe(packet->data, packet->size, &save_packet.data);
 
-			blog(MGW_LOG_INFO, "Source save key frame(%d)! data[-3]=%02x, "\
+			blog(MGW_LOG_INFO, "Source save key frame(%ld)! data[-3]=%02x, "\
 					"data[-2]=%02x, data[-1]=%02x, data[0]=%02x data[1]=%02x",
 					save_packet.size ,save_packet.data[-3], save_packet.data[-2],
 					save_packet.data[-1], save_packet.data[0], save_packet.data[1]);
@@ -357,6 +358,7 @@ void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet
 				save_packet.data += start_code_size;
 				save_packet.size -= start_code_size;
 			}
+			save_packet.priority = FRAME_PRIORITY_HIGH;
 		}
 	}
 
@@ -393,7 +395,7 @@ bool mgw_source_start(struct mgw_source *source)
 	if (source->context.data)
 		source->actived = source->info.start(source);
 
-	source->actived;
+	return source->actived;
 }
 
 void mgw_source_stop(struct mgw_source *source)

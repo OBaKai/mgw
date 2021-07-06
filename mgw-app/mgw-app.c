@@ -5,6 +5,7 @@
 #include "formats/ff-demuxing.h"
 
 #include <stdio.h>
+#include <unistd.h>
 
 
 /** 
@@ -42,23 +43,47 @@ int main(int argc, char *argv[])
 
     source_settings = mgw_data_create_from_json_file("source-config.json");
     mgw_stream_add_private_source(stream, source_settings);
+    mgw_data_release(source_settings);
+
+    mgw_data_t *test_data = mgw_data_create_from_json_file("source-config.json");
+    mgw_data_t *master_data = mgw_data_create();
+
+    mgw_data_set_obj(master_data, "test_data", test_data);
+
+    mgw_data_release(test_data);
+    mgw_data_release(master_data);
 
     /** start demux and send packet to source */
-    demux = ff_demux_create("test_mgw.mp4", false);
-    ff_demux_start(demux, proc_packet, stream);
+	demux = ff_demux_create("/home/young/workDir/mgw/install/bin/test_mgw.mp4", false);
+	// ff_demux_start(demux, proc_packet, stream);
 
-    output_settings = mgw_data_create_from_json_file("output-config-template.json");
-    mgw_stream_add_ouptut(stream, output_settings);
+    // output_settings = mgw_data_create_from_json_file("output-config-template.json");
+    // mgw_stream_add_ouptut(stream, output_settings);
 
-    output_settings = mgw_data_create_from_json_file("output-config-template.json");
+    /*output_settings = mgw_data_create_from_json_file("output-config-template.json");
     mgw_data_set_int(output_settings, "channel", 2);
     mgw_data_set_string(output_settings, "id", "output2");
     mgw_data_set_string(output_settings, "key", "stream2");
     mgw_stream_add_ouptut(stream, output_settings);
-
-	while('q' != getchar());
+    */
+	char code;
+	while('q' != (code = getchar()))
+    {
+		switch(code) {
+            case '1': {
+                output_settings = mgw_data_create_from_json_file("output-config-template.json");
+                mgw_stream_add_ouptut(stream, output_settings);
+                mgw_data_release(output_settings);
+                break;
+            }
+            case '2': mgw_stream_release_output(stream, "output1"); break;
+			default: break;
+		}
+		usleep(50 * 1000);
+    }
 
 error:
+    // mgw_data_release(output_settings);
 	ff_demux_stop(demux);
 	ff_demux_destroy(demux);
 	mgw_stream_destroy(stream);

@@ -52,13 +52,13 @@ void *ff_demux_create(const char *url, bool save_file)
     if (!url)
         return NULL;
 
-    struct ff_demux *demux = bzalloc(sizeof(struct ff_demux));
+	struct ff_demux *demux = bzalloc(sizeof(struct ff_demux));
 	dstr_copy(&demux->src_file, url);
 	os_event_init(&demux->demux_stopping, OS_EVENT_TYPE_MANUAL);
 	os_sem_init(&demux->demux_sem, 0);
 
-    if (avformat_open_input(&demux->fmt, url, NULL, NULL) < 0) {
-		blog(MGW_LOG_ERROR, "Tried to open input:%s failed!");
+	if (avformat_open_input(&demux->fmt, url, NULL, NULL) < 0) {
+		blog(MGW_LOG_ERROR, "Tried to open input:%s failed!", url);
 		goto error;
 	}
 
@@ -96,7 +96,8 @@ void *ff_demux_create(const char *url, bool save_file)
 	} else {
 		AVCodecParameters *codecpar = NULL;
 		codecpar = demux->fmt->streams[demux->video_index]->codecpar;
-		avcodec_parameters_copy(demux->video_filter_ctx->par_in, codecpar);
+		if (codecpar)
+			avcodec_parameters_copy(demux->video_filter_ctx->par_in, codecpar);
 
 		av_bsf_init(demux->video_filter_ctx);
 	}
@@ -209,7 +210,8 @@ static void *demuxing_thread(void *arg)
 								fwrite(video_pkt.data, video_pkt.size, 1, demux->h264_file);
 								fflush(demux->h264_file);
 							}
-							//blog(MGW_LOG_INFO, "write video data! size = %d", video_pkt.size);
+							blog(MGW_LOG_INFO, "write video data! size = %d, data[0]:%02x, data[1]:%02x, data[2]:%02x, data[3]:%02x, data[4]:%02x",
+								video_pkt.size, video_pkt.data[0], video_pkt.data[1], video_pkt.data[2], video_pkt.data[3], video_pkt.data[4]);
 							packet.keyframe = mgw_avc_keyframe(video_pkt.data, video_pkt.size);
 							packet.size = video_pkt.size;
 							packet.pts = ts_ms * 1000;

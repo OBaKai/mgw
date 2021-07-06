@@ -9,6 +9,9 @@ extern "C" {
 
 #define MAX_PLANES  8
 
+#define FRAME_PRIORITY_LOW      1
+#define FRAME_PRIORITY_HIGH     2
+
 enum encoder_type {
     ENCODER_AUDIO,
     ENCODER_VIDEO

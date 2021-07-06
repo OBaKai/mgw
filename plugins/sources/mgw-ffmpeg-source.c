@@ -34,7 +34,7 @@ static void ffmpeg_source_destroy(void *data)
 
 static bool ffmpeg_source_start(void *data)
 {
-
+    return false;
 }
 
 static void ffmpeg_source_stop(void *data)
@@ -54,7 +54,7 @@ static void ffmpeg_source_update(void *data, mgw_data_t *settings)
 
 static mgw_data_t *ffmpeg_source_get_settings(void *data)
 {
-
+    return NULL;
 }
 
 

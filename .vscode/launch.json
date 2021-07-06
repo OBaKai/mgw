@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/home/young/workDir/mgw/mgw-app/app.out",
+            "program": "/home/young/workDir/mgw/install/bin/mgw.out",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

@@ -218,8 +218,8 @@ struct mgw_output {
 	bool						private_output;
 	int							stop_code;
 	os_event_t					*stopping_event;
-
 	void						*buffer;
+	volatile long				failed_count;
 
 	int			last_error_status;
 

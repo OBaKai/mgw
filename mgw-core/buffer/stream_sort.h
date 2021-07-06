@@ -19,6 +19,7 @@ typedef struct _sc_sortframe_
 	unsigned int frame_len;
 	unsigned long long timestamp;
 	char frametype;
+    int priority;
 }sc_sortframe;
 
 typedef int (*SortDataCallback)(void *puser, sc_sortframe *oframe);

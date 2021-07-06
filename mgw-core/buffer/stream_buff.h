@@ -27,6 +27,7 @@ typedef struct _SMemFrameInfo
 {
 	unsigned long long timestamp;
 	frame_t frametype;//0:I frame
+    int priority;
 	char reserved[3];
 }SMemFrameInfo;
 
@@ -129,14 +130,18 @@ typedef struct _SGetFrameInfo_
 }SGetFrameInfo;
 void InitMemoryParam(char *phead, int frames, int size, void *priv_data);
 
-BuffContext *CreateStreamBuff(unsigned int size, const char *name, const char *id, int frames, int type, io_mode_t mode, int read_bytime, void *priv_data);
+BuffContext *CreateStreamBuff(unsigned int size, const char *name,
+							const char *id,int frames, int type,
+							io_mode_t mode, int read_bytime, void *priv_data);
 
 int DeleteStreamBuff(BuffContext *pbuf);
 
 /*frametype:0:IFrame*/
-int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, unsigned int framelen, unsigned long long timestamp, frame_t frametype);
+int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, uint32_t framelen,
+						uint64_t timestamp, frame_t frametype, int priority);
 /*By copy*/
-int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, unsigned int maxframelen, unsigned long long *timestamp, frame_t *frametype);
+int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, uint32_t maxframelen,
+						uint64_t *timestamp, frame_t *frametype, int *priority);
 /* No copy*/
 int GetOneFrameFromBuff2(BuffContext *pcontext, SGetFrameInfo *pinfo);
 unsigned long long CheckBuffDuration(BuffContext *pcontext);

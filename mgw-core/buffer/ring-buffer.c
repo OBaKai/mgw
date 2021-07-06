@@ -9,7 +9,7 @@
 /** Set ring buffer to 10M Bytes by default */
 #define RING_BUFFER_SIZE_DEF        20*1024*1024
 /** Set ring buffer to 30 frames by default */
-#define RING_BUFFER_CAP_DEF         60
+#define RING_BUFFER_CAP_DEF         80
 /** Set ring buffer max frame size for getting */
 #define RING_BUFFER_MAX_FRAMESIZE   500*1024
 
@@ -26,8 +26,8 @@ mgw_data_t *mgw_rb_get_default(void)
     mgw_data_t *setting = mgw_data_create();
 
     mgw_data_set_default_bool(setting, "sort", true);
-    mgw_data_set_default_bool(setting, "shared_mem", false);
-    mgw_data_set_default_bool(setting, "read_by_time", false);
+    mgw_data_set_default_bool(setting, "heap_mem", true);
+    mgw_data_set_default_bool(setting, "read_by_time", true);
     mgw_data_set_default_int(setting, "mem_size", RING_BUFFER_SIZE_DEF);
     mgw_data_set_default_int(setting, "capacity", RING_BUFFER_CAP_DEF);
 
@@ -37,13 +37,13 @@ mgw_data_t *mgw_rb_get_default(void)
 static int datacallback(void *puser, sc_sortframe *oframe)
 {
 	return PutOneFrameToBuff((BuffContext *)puser, oframe->frame, \
-            oframe->frame_len, oframe->timestamp, oframe->frametype);
+            oframe->frame_len, oframe->timestamp, oframe->frametype, oframe->priority);
 }
 
 void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
 {
-    struct ring_buffer *rb = bmalloc(sizeof(struct ring_buffer));
-    rb->settings = settings;
+    struct ring_buffer *rb = bzalloc(sizeof(struct ring_buffer));
+    rb->settings = mgw_data_newref(settings);
 
     if (!settings)
         rb->settings = mgw_rb_get_default();
@@ -64,7 +64,7 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
     rb->bc = CreateStreamBuff(mgw_data_get_int(rb->settings, "mem_size"),
                             name,id,
                             mgw_data_get_int(rb->settings, "capacity"),
-                            mgw_data_get_bool(rb->settings, "shared_mem"),
+                            mgw_data_get_bool(rb->settings, "heap_mem"),
                             io,
                             mgw_data_get_bool(rb->settings, "read_by_time"),
                             (void *)param);
@@ -73,7 +73,7 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
 
     /* as source writer, create the sort list if enable sort */
     if (IO_MODE_WRITE == io && rb->sort) {
-        RegisterSortInfo info;
+        RegisterSortInfo info = {};
         info.Datacallback = datacallback;
         info.puser = rb->bc;
         info.uiSize = SORT_SIZE_DEF;
@@ -89,8 +89,8 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
         dstr_copy(&info.userid, id);
 
         rb->sort_list = pCreateStreamSort(&info);
-		// dstr_free(&info.name);
-		// dstr_free(&info.userid);
+		dstr_free(&info.name);
+		dstr_free(&info.userid);
 
         if (!rb->sort_list)
             goto error;
@@ -116,19 +116,21 @@ struct source_param *mgw_rb_get_source_param(void *data)
 
 void mgw_rb_destroy(void *data)
 {
-    struct ring_buffer *rb = data;
+	struct ring_buffer *rb = data;
 
-    if (!data)
-        return;
+	if (!rb)
+		return;
 
-    if (rb->settings)
-        mgw_data_release(rb->settings);
+	if (rb->settings)
+		mgw_data_release(rb->settings);
 
-    if (rb->sort && rb->sort_list)
-        DelectStreamSort(rb->sort_list);
+	if (!!rb->sort_list)
+		DelectStreamSort(rb->sort_list);
 
-    if (rb->bc)
-        DeleteStreamBuff(rb->bc);
+	if (rb->bc)
+		DeleteStreamBuff(rb->bc);
+
+	bfree(rb);
 }
 
 void mgw_rb_addref(void *data)
@@ -164,10 +166,11 @@ size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet)
 		iframe.frame_len = packet->size;
 		iframe.timestamp = packet->pts;
 		iframe.frame = packet->data;
+        iframe.priority = packet->priority;
 		write_size = PutFrameStreamSort(&rb->sort_list, &iframe);
     } else {
         write_size = PutOneFrameToBuff(rb->bc, packet->data, \
-                packet->size, packet->pts, frame_type);
+                packet->size, packet->pts, frame_type, packet->priority);
     }
     return write_size;
 }
@@ -183,7 +186,7 @@ struct ring_buffer *rb = data;
         return -1;
     frame_t frame_type = FRAME_UNKNOWN;
     read_size = GetOneFrameFromBuff(rb->bc, (char **)&packet->data, RING_BUFFER_MAX_FRAMESIZE, \
-            (unsigned long long *)&packet->pts, &frame_type);
+            (unsigned long long *)&packet->pts, &frame_type, &packet->priority);
 
     if (FRAME_AAC == frame_type)
         packet->type = ENCODER_AUDIO;

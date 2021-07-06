@@ -46,7 +46,7 @@ static const char *get_git_sha1(void)
 static char *make_version_str(uint8_t major, uint8_t minor, \
                 uint16_t patch, bool with_time, bool with_sha1)
 {
-	char *version = bmalloc(64);
+	char *version = bzalloc(64);
 
 	snprintf(version, 64, "%d.%d.%d", major, minor, patch);
 
@@ -78,7 +78,7 @@ const char *mgw_get_version_string(void)
 	static char mgw_ver[64] = {};
 	char *ver = make_version_str(LIBMGW_API_MAJOR_VER, LIBMGW_API_MINOR_VER,\
 					LIBMGW_API_PATCH_VER, true, true);
-	if (mgw_ver) {
+	if (ver) {
 		strncpy(mgw_ver, ver, sizeof(mgw_ver));
 		bfree(ver);
 	}
@@ -189,11 +189,6 @@ static void destroy_all_sources(void)
 		source = next;
 	}
 	mgw->data.first_source = NULL;
-}
-
-static void free_mgw_modules(void)
-{
-
 }
 
 static void free_mgw_data(void)
@@ -491,7 +486,7 @@ mgw_output_t *mgw_load_output(mgw_data_t *data)
     return NULL;
 }
 
-void mgw_laod_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *private_data)
+void mgw_load_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *private_data)
 {
 
 }

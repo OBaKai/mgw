@@ -1,4 +1,5 @@
 export PROJECT_ROOT_PATH := $(shell pwd)
+export PLATFORM := arm-hisiv600-linux-
 #$(info $(PROJECT_ROOT_PATH))
 
 all: core plugin app

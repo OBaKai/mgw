@@ -72,8 +72,8 @@ EXPORT void bcrash(const char *format, ...);
 
 EXPORT char *get_localtime_str(void);
 
-#define blog(level, fmt, ...) blog_ext(level, "[%s][%s][%d][%s] "fmt, \
-                                get_localtime_str(), __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#define blog(level, fmt, ...) blog_ext(level, "[%s][%s][%d] "fmt, \
+                                get_localtime_str(), __FILE__, __LINE__, ##__VA_ARGS__)
 
 #undef PRINTFATTR
 

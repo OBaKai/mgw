@@ -1,6 +1,5 @@
 #------------------------ Output Settings ---------------------------
 prefix = $(PROJECT_ROOT_PATH)/install
-PLATFORM =
 DEBUG = "yes"
 
 #------------------------ Platform Settings -------------------------

@@ -5,7 +5,6 @@
 #include "util/mgw-data.h"
 #include "util/codec-def.h"
 #include "util/darray.h"
-#include "mgw-internal.h"
 
 #ifdef __cpluplus
 extern "C" {
@@ -28,7 +27,7 @@ bool mgw_stream_add_ouptut(void *data, mgw_data_t *settings);
 bool mgw_stream_add_private_output(void *data, mgw_data_t *settings);
 void mgw_stream_release_output(void *data, const char *id);
 
-mgw_data_t *mgw_stream_get_info(void *data);
+mgw_data_t *mgw_stream_get_info(void *data, const char *id);
 
 bool mgw_stream_send_private_packet(void *data, struct encoder_packet *packet);
 

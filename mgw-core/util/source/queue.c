@@ -7,7 +7,7 @@
 
 node_t *gen_node(int action, void *data, void *priv_data)
 {
-    node_t *n = (node_t*)bmalloc(sizeof(node_t));
+    node_t *n = (node_t*)bzalloc(sizeof(node_t));
     if (!!n) {
         n->action = action;
         n->delay = 0;
@@ -34,8 +34,8 @@ void del_node(node_t* n)
 queue_t *q_init(void)
 {
     queue_t *q = NULL;
-    q = (queue_t*)bmalloc(sizeof(queue_t));
-    q->head = q->tail = (node_t*)bmalloc(sizeof(node_t));
+    q = (queue_t*)bzalloc(sizeof(queue_t));
+    q->head = q->tail = (node_t*)bzalloc(sizeof(node_t));
     q->head->next = NULL;
     q->length = 0;
     pthread_mutex_init(&q->mutex, NULL);

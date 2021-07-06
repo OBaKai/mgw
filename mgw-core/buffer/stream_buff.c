@@ -111,7 +111,7 @@ BuffContext *CreateStreamBuff(unsigned int size, const char *name, const char *i
 			MemReader_t *read = (MemReader_t *)calloc(1, sizeof(MemReader_t));
 			pbuf->pReadpara = (char *)read;
 			pbuf->pWritepara = NULL;
-			read->breIframe = false;
+			read->breIframe = true;
 			if(read_bytime)
 			{
 				read->bReadByTime = true;
@@ -222,7 +222,8 @@ int CheckBuffDataCover(unsigned int pos_s, unsigned int pos_e, int next, Smemory
 	return 0;
 }
 
-int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, unsigned int framelen, unsigned long long timestamp, frame_t frametype)
+int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, uint32_t framelen,
+						uint64_t timestamp, frame_t frametype, int priority)
 {
 	if(!pcontext || !pframe)
 	{
@@ -268,6 +269,7 @@ int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, unsigned int framelen
 	pstuFrames[w].len = framelen;
 	pstuFrames[w].stuFrameInfo.frametype = frametype;
 	pstuFrames[w].stuFrameInfo.timestamp = timestamp;
+    pstuFrames[w].stuFrameInfo.priority  = priority;
 	pstuFrames[w].ucValidFlag = 1;
 	
 //	SearchOneWriteBuff(BuffContext *pcontext);
@@ -358,7 +360,7 @@ unsigned long long CheckBuffDuration(BuffContext *pcontext)
 	}
 	SmemoryHead *phead = (SmemoryHead *)pcontext->position.pstuHead;
 	SmemoryFrame *pstuFrames = (SmemoryFrame *)pcontext->position.pstuFrames;
-	char *pstart_addr = pcontext->position.pstuData;
+	// char *pstart_addr = pcontext->position.pstuData;
 	MemReader_t *pRead = (MemReader_t *)pcontext->pReadpara;
 	int wcount = phead->uiWritFrameCount - 1;
 	if(wcount <= pRead->u32RdFrameCount)
@@ -379,7 +381,8 @@ static char * put_be32(char *output, uint32_t nVal )
     return output+4;
 }
 
-int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, unsigned int maxframelen, unsigned long long *timestamp, frame_t *frametype)
+int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe,uint32_t maxframelen,
+                        uint64_t *timestamp, frame_t *frametype, int *priority)
 {
 	if(!pcontext || !pframe)
 	{
@@ -399,7 +402,8 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, unsigned int maxfr
 	
 	if(phead->uiWritFrameCount < pRead->u32RdFrameCount)
 	{
-		_printd("(%s %s)  w=%d < r=%d so need jump count=%d\n", pcontext->Name, pcontext->UserId, phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);
+		_printd("(%s %s)  w=%d < r=%d so need jump count=%d\n", pcontext->Name, pcontext->UserId,
+                        phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);
 		JumpToOldestIFrame(pRead, phead, pstuFrames);
 		return 0;
 	}
@@ -408,7 +412,8 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, unsigned int maxfr
 	{
 		if(!pRead->u32RdFrameCount)
 		{
-			_printd("(%s %s) need jump w=%d r=%d count=%d\n", pcontext->Name, pcontext->UserId, phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);
+			_printd("(%s %s) need jump w=%d r=%d count=%d\n", pcontext->Name, pcontext->UserId,
+                        phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);
 		}
 		if(JumpToOldestIFrame(pRead, phead, pstuFrames) == -1)
 		{
@@ -483,6 +488,7 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, unsigned int maxfr
 
 	*timestamp = pstuFrames[rp].stuFrameInfo.timestamp;
 	*frametype = pstuFrames[rp].stuFrameInfo.frametype;
+    *priority  = pstuFrames[rp].stuFrameInfo.priority;
 
 	pRead->u32RdFrameCount++;
 	return pstuFrames[rp].len + nalu_size;
