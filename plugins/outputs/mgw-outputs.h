@@ -29,13 +29,13 @@ struct mgw_output_info {
     const char      *(*get_name)(void *type);
     void            *(*create)(mgw_data_t *setting, mgw_output_t *output);
     void            (*destroy)(void *data);
-
     bool            (*start)(void *data);
     void            (*stop)(void *data);
-
     uint64_t        (*get_total_bytes)(void *data);
-    bool            (*get_settings)(void *data, mgw_data_t *settings);
-    void            (*get_default)(mgw_data_t *settings);
+
+    /** Options */
+    mgw_data_t      *(*get_settings)(void *data);
+    mgw_data_t      *(*get_default)(void);
     void            (*update)(void *data, mgw_data_t *settings);
 };
 

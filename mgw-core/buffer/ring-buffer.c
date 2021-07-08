@@ -9,7 +9,7 @@
 /** Set ring buffer to 10M Bytes by default */
 #define RING_BUFFER_SIZE_DEF        20*1024*1024
 /** Set ring buffer to 30 frames by default */
-#define RING_BUFFER_CAP_DEF         80
+#define RING_BUFFER_CAP_DEF         120
 /** Set ring buffer max frame size for getting */
 #define RING_BUFFER_MAX_FRAMESIZE   500*1024
 
@@ -25,7 +25,7 @@ mgw_data_t *mgw_rb_get_default(void)
 {
     mgw_data_t *setting = mgw_data_create();
 
-    mgw_data_set_default_bool(setting, "sort", true);
+    mgw_data_set_default_bool(setting, "sort", false);
     mgw_data_set_default_bool(setting, "heap_mem", true);
     mgw_data_set_default_bool(setting, "read_by_time", true);
     mgw_data_set_default_int(setting, "mem_size", RING_BUFFER_SIZE_DEF);

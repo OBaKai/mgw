@@ -112,14 +112,7 @@ BuffContext *CreateStreamBuff(unsigned int size, const char *name, const char *i
 			pbuf->pReadpara = (char *)read;
 			pbuf->pWritepara = NULL;
 			read->breIframe = true;
-			if(read_bytime)
-			{
-				read->bReadByTime = true;
-			}
-			else
-			{
-				read->bReadByTime = false;
-			}
+			read->bReadByTime = read_bytime;
 		}
 		else
 		{
@@ -298,11 +291,13 @@ int JumpToOldestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pst
 		pos = (iTempPos+i) % phead->uiMaxValidFrames;
 		if(pstuFrames[pos].ucValidFlag && pstuFrames[pos].stuFrameInfo.frametype == FRAME_I)
 		{
+            /**< total write frames less than queue capacity*/
 			int iNewPos = (iTempPos+i) - phead->uiMaxValidFrames;
 			if(iNewPos < 0)
 			{
 				iNewPos = 0;
 			}
+            
 			if((unsigned int)iNewPos < pRead->u32RdFrameCount)
 			{
 				if(pRead->u32RdFrameCount < (unsigned int)iTempPos)
@@ -410,7 +405,7 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe,uint32_t maxframele
 
 	if((phead->uiWritFrameCount - pRead->u32RdFrameCount) > phead->uiMaxValidFrames)
 	{
-		if(!pRead->u32RdFrameCount)
+		//if(!pRead->u32RdFrameCount)
 		{
 			_printd("(%s %s) need jump w=%d r=%d count=%d\n", pcontext->Name, pcontext->UserId,
                         phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);

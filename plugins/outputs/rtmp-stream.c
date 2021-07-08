@@ -1,6 +1,7 @@
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 #include "mgw-internal.h"
 #include "mgw-outputs.h"
@@ -13,8 +14,8 @@
 #include "librtmp/log.h"
 #include "librtmp/rtmp.h"
 
-#undef  MODULE_NAME
-#define MODULE_NAME     "rtmp_stream"
+#undef  RTMP_MODULE_NAME
+#define RTMP_MODULE_NAME     "rtmp_stream"
 
 #define NETIF_DEF       0
 #define NETIF_NETCARD   1
@@ -101,21 +102,23 @@ static void rtmp_stream_init_once(void)
     blog(MGW_LOG_INFO, "rtmp stream initialize once");
 }
 
-static void rtmp_stream_get_default(mgw_data_t *setting)
+static mgw_data_t *rtmp_stream_get_default(void)
 {
-    if (!setting)
-        return;
+	mgw_data_t *def_settings = mgw_data_create();
+    mgw_data_set_int(def_settings, "netif_mtu", NETIF_MTU_DEF);
+    mgw_data_set_string(def_settings, "netif_type", NETIF_TYPE_DEF);
+    mgw_data_set_string(def_settings, "netif_name", NETIF_NAME_DEF);
 
-    mgw_data_set_int(setting, "netif_mtu", NETIF_MTU_DEF);
-    mgw_data_set_string(setting, "netif_type", NETIF_TYPE_DEF);
-    mgw_data_set_string(setting, "netif_name", NETIF_NAME_DEF);
+	return def_settings;
 }
 
-static bool rtmp_stream_get_settings(void *data, mgw_data_t *settings)
+static mgw_data_t *rtmp_stream_get_settings(void *data)
 {
     struct rtmp_stream *stream = data;
     if (!stream_valid(data))
-        return false;
+        return NULL;
+
+	mgw_data_t *settings = mgw_data_create();
 
     mgw_data_set_int(settings, "drop_frames", 
             stream->audio_drop_frames + stream->video_drop_frames);
@@ -133,13 +136,13 @@ static bool rtmp_stream_get_settings(void *data, mgw_data_t *settings)
     mgw_data_set_string(settings, "username", stream->username.array);
     mgw_data_set_string(settings, "password", stream->password.array);
 
-    return true;
+    return settings;
 }
 
 static const char *rtmp_stream_get_name(void *data)
 {
     UNUSED_PARAMETER(data);
-    return MODULE_NAME;
+    return RTMP_MODULE_NAME;
 }
 
 static void rtmp_stream_destroy(void *data)
@@ -168,7 +171,7 @@ static void rtmp_stream_destroy(void *data)
 	{
 		if (r->Link.streams[idx].playpath.av_val)
 		{
-			free(r->Link.streams[idx].playpath.av_val);
+			bfree(r->Link.streams[idx].playpath.av_val);
 			r->Link.streams[idx].playpath.av_val = NULL;
 		}
 	}
@@ -403,8 +406,9 @@ static void *send_thread(void *data)
 		if (stopping(stream))
 			break;
 
-		if (!stream->output->get_next_encoder_packet(stream->output, &packet))
-			continue;
+		if (!stream->output->get_next_encoder_packet(stream->output, &packet)) {
+            continue;
+        }
 
 		if (!stream->sent_headers || packet.priority == FRAME_PRIORITY_LOW) {
 			if (!send_headers(stream)) {
@@ -420,7 +424,7 @@ static void *send_thread(void *data)
 			break;
 		}
 		bfree(packet.data);
-		//usleep(50);
+		usleep(500);
 	}
 
 	if (disconnected(stream))
@@ -652,16 +656,17 @@ static void rtmp_stream_apply_update(void *data, mgw_data_t *settings)
 }
 
 struct mgw_output_info rtmp_output_info = {
-    .id                 = "rtmp_output",
-    .flags              = MGW_OUTPUT_AV |
-                          MGW_OUTPUT_ENCODED,
-    .get_name           = rtmp_stream_get_name,
-    .create             = rtmp_stream_create,
-    .destroy            = rtmp_stream_destroy,
-    .start              = rtmp_stream_start,
-    .stop               = rtmp_stream_stop,
-    .get_total_bytes    = rtmp_stream_get_total_bytes,
-    .get_default        = rtmp_stream_get_default,
-    .get_settings       = rtmp_stream_get_settings,
-    .update             = rtmp_stream_apply_update
+	.id                 = "rtmp_output",
+	.flags              = MGW_OUTPUT_AV |
+							MGW_OUTPUT_ENCODED,
+	.get_name           = rtmp_stream_get_name,
+	.create             = rtmp_stream_create,
+	.destroy            = rtmp_stream_destroy,
+	.start              = rtmp_stream_start,
+	.stop               = rtmp_stream_stop,
+	.get_total_bytes    = rtmp_stream_get_total_bytes,
+
+	.get_default        = rtmp_stream_get_default,
+	.get_settings       = rtmp_stream_get_settings,
+	.update             = rtmp_stream_apply_update
 };

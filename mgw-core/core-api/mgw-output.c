@@ -227,9 +227,9 @@ mgw_output_t *mgw_output_create(const char *id,
 	output->control->output = output;
 
 	/** initialize settings */
-	if (!settings && info) {
+	if (!settings && info && info->get_default) {
 		settings = mgw_data_create();
-		info->get_default(settings);
+		settings = info->get_default();
 	}
 
 	/** initialize context */

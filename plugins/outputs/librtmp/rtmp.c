@@ -674,6 +674,7 @@ SocksSetup(RTMP *r, AVal *sockshost)
     }
 }
 
+#if 0
 static int
 parseAMF(AMFObject *obj, AVal *av, int *depth)
 {
@@ -766,6 +767,7 @@ parseAMF(AMFObject *obj, AVal *av, int *depth)
         (*depth)++;
     return 0;
 }
+#endif
 
 int RTMP_SetupURL(RTMP *r, char *url)
 {

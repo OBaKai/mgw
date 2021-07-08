@@ -4,9 +4,10 @@
 #include "mgw-outputs.h"
 #include "mgw-internal.h"
 
-#define OUTPUTS_DESCRIPTION		"outputs: [rtmp-output]"
+#define OUTPUTS_DESCRIPTION		"outputs: [rtmp-output, srt-output]"
 
 extern struct mgw_output_info rtmp_output_info;
+extern struct mgw_output_info srt_output_info;
 
 static inline bool check_and_register_output_info( \
 		struct mgw_output_info *info, struct darray *outputs)
@@ -39,6 +40,7 @@ bool outputs_load(struct darray *outputs, size_t type_size)
 		return false;
 	/* register all output here */
 	check_and_register_output_info(&rtmp_output_info, outputs);
+    check_and_register_output_info(&srt_output_info, outputs);
 
 	return true;
 }
@@ -49,11 +51,13 @@ void outputs_unload(struct darray *outputs, size_t type_size)
 			sizeof(struct mgw_output_info)))
 		return;
 
+	size_t info_size = sizeof(struct mgw_output);
+
 	DARRAY(struct mgw_output_info) *dest = outputs;
 	for (size_t i = 0; i < outputs->num; i++) {
 		struct mgw_output_info *info = outputs->array + i;
-		if (0 == memcmp(info, &rtmp_output_info, \
-			sizeof(rtmp_output_info))) {
+		if (0 == memcmp(info, &rtmp_output_info, info_size) ||
+			0 == memcmp(info, &srt_output_info, info_size)) {
 			da_erase_item((*dest), info);
 		}
 	}
