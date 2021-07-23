@@ -1,3 +1,10 @@
+/**
+ * File: mgw-output.c
+ * 
+ * Description: The logic implement of mgw output module
+ * 
+ * Datetime: 2021/5/10
+ * */
 #include "mgw.h"
 
 #include "util/base.h"
@@ -189,13 +196,13 @@ static size_t mgw_output_get_audio_header(
 	return mgw_rb_get_audio_header(output->buffer, header);
 }
 
-static bool mgw_output_get_next_encoder_packet(
+static int mgw_output_get_next_encoder_packet(
 		mgw_output_t *output, struct encoder_packet *packet)
 {
 	if (!output || !packet || !output->buffer)
-		return false;
+		return FRAME_CONSUME_PERR;
 
-	return mgw_rb_read_packet(output->buffer, packet) > 0;
+	return mgw_rb_read_packet(output->buffer, packet);
 }
 
 mgw_output_t *mgw_output_create(const char *id,
@@ -294,7 +301,7 @@ void mgw_output_destroy(struct mgw_output *output)
 
 	os_event_wait(output->stopping_event);
 	if (output->context.data) {
-        blog(MGW_LOG_INFO, "----------->> call rtmp stream destroy");
+        blog(MGW_LOG_INFO, "----------->> call '%s' stream destroy", output->info.id);
         output->info.destroy(output->context.data);
     }
 	/** Destroy buffer */

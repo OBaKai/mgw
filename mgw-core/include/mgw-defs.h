@@ -29,6 +29,7 @@
 #define MODULE_MISSING_EXPORTS    -3
 #define MODULE_INCOMPATIBLE_VER   -4
 
+/**< For mgw internal */
 #define MGW_OUTPUT_SUCCESS         0
 #define MGW_OUTPUT_BAD_PATH       -1
 #define MGW_OUTPUT_CONNECT_FAILED -2
@@ -38,6 +39,7 @@
 #define MGW_OUTPUT_UNSUPPORTED    -6
 #define MGW_OUTPUT_NO_SPACE       -7
 
+/**< For caller */
 #define MGW_OUTPUT_STOPED			0
 #define MGW_OUTPUT_CONNECTING		1
 #define MGW_OUTPUT_RECONNECTING		2

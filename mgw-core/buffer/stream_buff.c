@@ -2,6 +2,8 @@
 #include "malloc_memory.h"
 #include "share_memory.h"
 
+#include "util/codec-def.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -215,8 +217,8 @@ int CheckBuffDataCover(unsigned int pos_s, unsigned int pos_e, int next, Smemory
 	return 0;
 }
 
-int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, uint32_t framelen,
-						uint64_t timestamp, frame_t frametype, int priority)
+int PutOneFrameToBuff(BuffContext *pcontext, uint8_t *pframe, uint32_t framelen,
+						int64_t timestamp, frame_t frametype, int priority)
 {
 	if(!pcontext || !pframe)
 	{
@@ -275,7 +277,8 @@ int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, uint32_t framelen,
 	return 0;
 }
 
-int JumpToOldestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pstuFrames)
+/**< 如果buffer能力过小，可能需要很多次查询，很久才能等到I帧 */
+static int JumpToOldestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pstuFrames)
 {
 	if(phead->uiWritFrameCount == 0)
 	{
@@ -289,6 +292,9 @@ int JumpToOldestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pst
 	for(i=0; i < phead->uiMaxValidFrames; i++)
 	{
 		pos = (iTempPos+i) % phead->uiMaxValidFrames;
+		// if (pstuFrames[pos].stuFrameInfo.frametype == FRAME_I)
+		// 	_printd("key frame, valid(%d)", pstuFrames[pos].ucValidFlag);
+
 		if(pstuFrames[pos].ucValidFlag && pstuFrames[pos].stuFrameInfo.frametype == FRAME_I)
 		{
             /**< total write frames less than queue capacity*/
@@ -297,7 +303,7 @@ int JumpToOldestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pst
 			{
 				iNewPos = 0;
 			}
-            
+
 			if((unsigned int)iNewPos < pRead->u32RdFrameCount)
 			{
 				if(pRead->u32RdFrameCount < (unsigned int)iTempPos)
@@ -306,14 +312,16 @@ int JumpToOldestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pst
 				}
 			}
 			pRead->u32RdFrameCount = iNewPos;
-			_printd("JumpToOldestIFrame is ok");
+			_printd("JumpToOldestIFrame is ok, droped frame:%d", i);
 			return 0;
 		}
 	}
+	//_printd("Jump to oldest key frame but not found! write pos(%u)", phead->uiWritFrameCount);
 	return -1;
 }
 
-int JumpTonewestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pstuFrames)
+/**< 只适用于新加进来的消费者跳到最新的I帧，其他情况跳到最新的I帧会出现回退情况！ */
+static int JumpTonewestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pstuFrames)
 {
 	if(phead->uiWritFrameCount == 0)
 	{
@@ -328,7 +336,7 @@ int JumpTonewestIFrame(MemReader_t *pRead, SmemoryHead *phead, SmemoryFrame *pst
 	for(i=iTempPos-1; i > min && i >= 0; i--)
 	{
 		pos = i % phead->uiMaxValidFrames;
-		if(pstuFrames[pos].ucValidFlag && pstuFrames[pos].stuFrameInfo.frametype == 0)
+		if(pstuFrames[pos].ucValidFlag && pstuFrames[pos].stuFrameInfo.frametype == FRAME_I)
 		{
 			int iNewPos = i;
 			if((unsigned int)iNewPos >= pRead->u32RdFrameCount)
@@ -367,7 +375,8 @@ unsigned long long CheckBuffDuration(BuffContext *pcontext)
 	return pstuFrames[w].stuFrameInfo.timestamp - pstuFrames[rp].stuFrameInfo.timestamp;
 }
 
-static char * put_be32(char *output, uint32_t nVal )
+/**< Bigend */
+static inline uint8_t *put_be32(uint8_t *output, uint32_t nVal)
 {
     output[3] = nVal & 0xff;
     output[2] = nVal >> 8;
@@ -376,9 +385,13 @@ static char * put_be32(char *output, uint32_t nVal )
     return output+4;
 }
 
-int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe,uint32_t maxframelen,
-                        uint64_t *timestamp, frame_t *frametype, int *priority)
+int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe,uint32_t maxframelen,
+                        int64_t *timestamp, frame_t *frametype, int *priority)
 {
+	/** 两个原则：1.读得太慢了，需要往前赶，跳到最老的I帧读取；
+	 * 			 2.读得太快了，需要等数据写进来，跳到最新的I帧去读取？？ 我认为应该原地等候，因为跳到最新的I帧相当于后退了
+	 */
+
 	if(!pcontext || !pframe)
 	{
 		_printd("Invalid parameter, pcontext(%p), pframe(%p)", pcontext, pframe);
@@ -390,32 +403,36 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe,uint32_t maxframele
 	MemReader_t *pRead = (MemReader_t *)pcontext->pReadpara;
 	int rp = 0;//pRead->u32RdFrameCount % phead->uiMaxValidFrames;
 	
+	/** 已经读到当前写的位置，读得太快了！ */
 	if(phead->uiWritFrameCount == pRead->u32RdFrameCount)
 	{
-		return 0;
+		return FRAME_CONSUME_FAST;
 	}
 	
+	/** 读的总数已经超过写的总数了，读得太快了，需要跳到最老的I帧？？？。不可能执行到的情况 unlikely */
 	if(phead->uiWritFrameCount < pRead->u32RdFrameCount)
 	{
 		_printd("(%s %s)  w=%d < r=%d so need jump count=%d\n", pcontext->Name, pcontext->UserId,
                         phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);
 		JumpToOldestIFrame(pRead, phead, pstuFrames);
-		return 0;
+		return FRAME_CONSUME_FAST;
 	}
 
+	/** 写的总数 - 读的总数 > buffer最大缓存的数量，读得太慢了，写的数据已经覆盖了还没有读的数据， 要跳到最老的I帧？？？*/
 	if((phead->uiWritFrameCount - pRead->u32RdFrameCount) > phead->uiMaxValidFrames)
 	{
-		//if(!pRead->u32RdFrameCount)
+		/*if(!pRead->u32RdFrameCount)
 		{
 			_printd("(%s %s) need jump w=%d r=%d count=%d\n", pcontext->Name, pcontext->UserId,
                         phead->uiWritFrameCount, pRead->u32RdFrameCount, phead->uiMaxValidFrames);
-		}
+		}*/
 		if(JumpToOldestIFrame(pRead, phead, pstuFrames) == -1)
 		{
-			return 0;
+			return FRAME_CONSUME_SLOW;
 		}
 	}
 
+	/** 第一帧需要是 I 帧，跳到最新的I帧 */
 	if(pRead->breIframe)
 	{
 		if(phead->uiWritFrameCount >= 5)
@@ -429,43 +446,47 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe,uint32_t maxframele
 		pRead->breIframe = false;
 	}
 	
+	/** 当前需要读的帧已经被覆盖了，跳到最老的I帧？？？ */
 	rp = pRead->u32RdFrameCount % phead->uiMaxValidFrames;
 	if(pstuFrames[rp].ucValidFlag == 0)
 	{
 		_printd("(%s %s)  pos=%d invalid frame ,jump to oldest iframe r=%d w=%d\n", pcontext->Name, pcontext->UserId, rp, pRead->u32RdFrameCount, phead->uiWritFrameCount);
 		if(JumpToOldestIFrame(pRead, phead, pstuFrames) == -1)
 		{
-			return 0;
+			return FRAME_CONSUME_SLOW;
 		}
 		rp = pRead->u32RdFrameCount % phead->uiMaxValidFrames;
 	}
 
+	/** 读到超大的帧，不要它 */
 	if(pstuFrames[rp].len > maxframelen)
 	{
 		_printd("maxframelen=%d len=%d", maxframelen, pstuFrames[rp].len);
 		return 0;
 	}
 	
+	/** 通过时间读取帧 */
 	if(pRead->bReadByTime)
 	{
 		unsigned long long gtime = *timestamp;
 		unsigned long long ntime = pstuFrames[rp].stuFrameInfo.timestamp;
 	
+		/** gtime < ntime的时候，ntime - gtime > 2 ms(读取的帧太旧)， 把当前帧的时间戳返回*/
 		if(0 != gtime && gtime < ntime && ntime - gtime > 2000)
 		{
 			*timestamp = pstuFrames[rp].stuFrameInfo.timestamp;
-			return 0;
+			return FRAME_CONSUME_SLOW;
 		}
 		
 	}
 
-	int nalu_size = FRAME_AAC == pstuFrames[rp].stuFrameInfo.frametype ? 0 : 4;
+	int nalu_size = 0;//FRAME_AAC == pstuFrames[rp].stuFrameInfo.frametype ? 0 : 4;
 	unsigned int position = pstuFrames[rp].position;
 	if(position + pstuFrames[rp].len <= phead->datasize)
 	{
         *pframe = bzalloc(pstuFrames[rp].len + nalu_size);
 		if (nalu_size)
-            put_be32((char*)*pframe, pstuFrames[rp].len);
+            put_be32(*pframe, pstuFrames[rp].len);
 
 		memcpy(*pframe + nalu_size, pstart_addr + position, pstuFrames[rp].len);
 	}
@@ -475,7 +496,7 @@ int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe,uint32_t maxframele
 		int len = pstuFrames[rp].len - left;
         *pframe = bzalloc(left + len + nalu_size);
 		if (nalu_size)
-            put_be32((char*)*pframe, pstuFrames[rp].len);
+            put_be32(*pframe, pstuFrames[rp].len);
 
 		memcpy(*pframe + nalu_size, pstart_addr + position, left);
 		memcpy(*pframe + nalu_size + left, pstart_addr, len);

@@ -137,11 +137,11 @@ BuffContext *CreateStreamBuff(unsigned int size, const char *name,
 int DeleteStreamBuff(BuffContext *pbuf);
 
 /*frametype:0:IFrame*/
-int PutOneFrameToBuff(BuffContext *pcontext, char *pframe, uint32_t framelen,
-						uint64_t timestamp, frame_t frametype, int priority);
+int PutOneFrameToBuff(BuffContext *pcontext, uint8_t *pframe, uint32_t framelen,
+						int64_t timestamp, frame_t frametype, int priority);
 /*By copy*/
-int GetOneFrameFromBuff(BuffContext *pcontext, char **pframe, uint32_t maxframelen,
-						uint64_t *timestamp, frame_t *frametype, int *priority);
+int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe, uint32_t maxframelen,
+						int64_t *timestamp, frame_t *frametype, int *priority);
 /* No copy*/
 int GetOneFrameFromBuff2(BuffContext *pcontext, SGetFrameInfo *pinfo);
 unsigned long long CheckBuffDuration(BuffContext *pcontext);

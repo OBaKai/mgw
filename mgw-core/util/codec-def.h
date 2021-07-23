@@ -12,6 +12,10 @@ extern "C" {
 #define FRAME_PRIORITY_LOW      1
 #define FRAME_PRIORITY_HIGH     2
 
+#define FRAME_CONSUME_SLOW		-1
+#define FRAME_CONSUME_FAST		-2
+#define FRAME_CONSUME_PERR		-3
+
 enum encoder_type {
     ENCODER_AUDIO,
     ENCODER_VIDEO
@@ -173,6 +177,9 @@ size_t mgw_avc_get_pps(const uint8_t *data, size_t size, uint8_t **pps);
 size_t mgw_avc_get_keyframe(const uint8_t *data, size_t size, uint8_t **keyframe);
 
 size_t mgw_get_aac_lc_header(
+			uint8_t channels, uint8_t samplesize,
+			uint32_t samplerate, uint8_t **header);
+size_t mgw_get_aaclc_flv_header(
 			uint8_t channels, uint8_t samplesize,
 			uint32_t samplerate, uint8_t **header);
 

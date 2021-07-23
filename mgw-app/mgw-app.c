@@ -45,16 +45,8 @@ int main(int argc, char *argv[])
     mgw_stream_add_private_source(stream, source_settings);
     mgw_data_release(source_settings);
 
-    mgw_data_t *test_data = mgw_data_create_from_json_file("source-config.json");
-    mgw_data_t *master_data = mgw_data_create();
-
-    mgw_data_set_obj(master_data, "test_data", test_data);
-
-    mgw_data_release(test_data);
-    mgw_data_release(master_data);
-
     /** start demux and send packet to source */
-	demux = ff_demux_create("/home/young/workDir/mgw/install/bin/test_mgw.mp4", false);
+	demux = ff_demux_create("/home//young//workDir//mgw/install//bin//ppp.mp4", false);
 	// ff_demux_start(demux, proc_packet, stream);
 
     // output_settings = mgw_data_create_from_json_file("output-config-template.json");
@@ -77,13 +69,23 @@ int main(int argc, char *argv[])
                 break;
             }
             case '2': mgw_stream_release_output(stream, "output1"); break;
+			case '3': {
+				output_settings = mgw_data_create_from_json_file("output-config-template.json");
+				mgw_data_set_int(output_settings, "channel", 2);
+				mgw_data_set_string(output_settings, "id", "output2");
+				mgw_data_set_string(output_settings, "path", "srt://192.168.0.22:4301?streamid=#!::h=live/livestream,m=publish");
+				mgw_data_set_string(output_settings, "protocol", "srt");
+                mgw_stream_add_ouptut(stream, output_settings);
+                mgw_data_release(output_settings);
+				break;
+			}
+			case '4':mgw_stream_release_output(stream, "output2"); break;
 			default: break;
 		}
 		usleep(50 * 1000);
     }
 
 error:
-    // mgw_data_release(output_settings);
 	ff_demux_stop(demux);
 	ff_demux_destroy(demux);
 	mgw_stream_destroy(stream);

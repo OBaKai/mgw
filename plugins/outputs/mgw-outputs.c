@@ -65,7 +65,7 @@ void outputs_unload(struct darray *outputs, size_t type_size)
 
 uint32_t outputs_get_version(void)
 {
-	return MGW_MAKE_VERSION_INT(MGW_OUTPUTS_MAJOR_VER,\
+	return MGW_MAKE_VERSION_INT(MGW_OUTPUTS_MAJOR_VER,
 			MGW_OUTPUTS_MINOR_VER, MGW_OUTPUTS_PATCH_VER);
 }
 

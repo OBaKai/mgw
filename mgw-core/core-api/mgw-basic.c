@@ -1,3 +1,10 @@
+/**
+ * File: mgw-basic.c
+ * 
+ * Description: Manager source stream and output stream
+ * 
+ * Datetime: 2021/5/10
+ * */
 #include "mgw-basic.h"
 #include "mgw.h"
 

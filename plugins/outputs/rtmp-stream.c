@@ -7,6 +7,7 @@
 #include "mgw-outputs.h"
 
 #include "util/base.h"
+#include "util/tlog.h"
 #include "util/dstr.h"
 #include "util/platform.h"
 
@@ -24,7 +25,9 @@
 #define NETIF_TYPE_DEF  "default"
 #define NETIF_NAME_DEF  ""
 
-pthread_once_t rtmp_context_once = PTHREAD_ONCE_INIT;
+//#define TEST_STREAM_TIMESTAMP	1
+
+static pthread_once_t rtmp_context_once = PTHREAD_ONCE_INIT;
 
 struct rtmp_stream {
     mgw_output_t    *output;
@@ -35,6 +38,9 @@ struct rtmp_stream {
     uint64_t        total_bytes_sent;
     uint64_t        audio_drop_frames, video_drop_frames;
     uint64_t        start_dts_offset;
+	int64_t			last_pts;
+	uint64_t		max_delta;
+    uint64_t        sent_frames;
 	volatile int64_t update_meta_time;
 
     volatile bool   connecting;
@@ -50,7 +56,7 @@ struct rtmp_stream {
     uint32_t        netif_mtu;
     struct dstr     netif_type, netif_name;
 
-    /* use by rtmp stream internal */
+    /* used by rtmp stream internal */
     uint16_t        port;
     struct dstr     path, key, dest_ip;
     struct dstr     username, password;
@@ -205,6 +211,8 @@ static void *rtmp_stream_create(mgw_data_t *setting, mgw_output_t *output)
     if (os_sem_init(&stream->send_sem, 0) != 0)
         goto rtmp_fail;
 
+	//os_event_signal(stream->stop_event);
+
     //UNUSED_PARAMETER(setting);
     return stream;
 
@@ -348,14 +356,16 @@ static bool send_meta_data(struct rtmp_stream *stream, size_t idx)
 }
 
 static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
-		bool *next)
+		bool *next, int64_t ts)
 {
 	mgw_output_t  *context  = stream->output;
 	uint8_t       *header;
 
 	struct encoder_packet packet   = {
 		.type         = ENCODER_AUDIO,
-		.timebase_den = 1
+		.timebase_den = 1,
+		.pts		  = ts,
+		.dts		  = ts
 	};
 
 	//must be AudioSpecificConfig -- aac
@@ -364,7 +374,7 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 	return send_packet(stream, &packet, true, idx) >= 0;
 }
 
-static bool send_video_header(struct rtmp_stream *stream)
+static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
 {
 	mgw_output_t  *context  = stream->output;
 	uint8_t       *header;
@@ -372,7 +382,9 @@ static bool send_video_header(struct rtmp_stream *stream)
 	struct encoder_packet packet   = {
 		.type         = ENCODER_VIDEO,
 		.timebase_den = 1,
-		.keyframe     = true
+		.keyframe     = true,
+		.pts		  = ts,
+		.dts		  = ts
 	};
 
 	// must be AVCDecoderConfigurationRecord -- avc
@@ -381,15 +393,15 @@ static bool send_video_header(struct rtmp_stream *stream)
 	return send_packet(stream, &packet, true, 0) >= 0;
 }
 
-static inline bool send_headers(struct rtmp_stream *stream)
+static inline bool send_headers(struct rtmp_stream *stream, int64_t ts)
 {
 	stream->sent_headers = true;
 	size_t i = 0;
 	bool next = true;
 
-	if (!send_audio_header(stream, i++, &next))
+	if (!send_audio_header(stream, i++, &next, ts))
 		return false;
-	if (!send_video_header(stream))
+	if (!send_video_header(stream, ts))
 		return false;
 
 	return true;
@@ -398,7 +410,7 @@ static inline bool send_headers(struct rtmp_stream *stream)
 static void *send_thread(void *data)
 {
 	struct rtmp_stream *stream = data;
-	struct encoder_packet packet;
+	int ret = 0, sleep_freq = 3;
 
 	os_set_thread_name("rtmp-stream: send_thread");
 	blog(MGW_LOG_INFO, "rtmp-stream thread running!");
@@ -406,25 +418,56 @@ static void *send_thread(void *data)
 		if (stopping(stream))
 			break;
 
-		if (!stream->output->get_next_encoder_packet(stream->output, &packet)) {
+		struct encoder_packet packet = {};
+		if (0 >= (ret = stream->output->get_next_encoder_packet(
+								stream->output, &packet))) {
+			// if (FRAME_CONSUME_FAST == ret) {
+			// 	sleep_freq++;
+			// 	if (sleep_freq > 8)
+			// 		sleep_freq = 8;
+			// 	blog(MGW_LOG_ERROR, "----------->> too fast!");
+			// }
+			// else if (FRAME_CONSUME_SLOW == ret) {
+			// 	sleep_freq--;
+			// 	if (sleep_freq < 2)
+			// 		sleep_freq = 3;
+			// 	blog(MGW_LOG_ERROR, "----------->> too slow!");
+			// }
             continue;
         }
 
-		if (!stream->sent_headers || packet.priority == FRAME_PRIORITY_LOW) {
-			if (!send_headers(stream)) {
+		if (!stream->sent_headers || FRAME_PRIORITY_LOW == packet.priority) {
+			if (!send_headers(stream, stream->sent_headers?packet.pts:0)) {
 				os_atomic_set_bool(&stream->disconnected, true);
 				bfree(packet.data);
 				break;
 			}
 		}
 
+#ifdef TEST_STREAM_TIMESTAMP
+		if ((packet.pts < stream->last_pts)) {
+			tlog(TLOG_ERROR, "--------------->>> cur pts(%llu) < start pts(%lld)\n", packet.pts, stream->start_dts_offset);
+		} else {
+			uint64_t cur_delta = packet.pts - stream->last_pts;
+			if ((cur_delta > stream->max_delta) && (stream->last_pts > 0)) {
+				tlog(TLOG_ERROR, "------------->>>> max_delta(%lld) cur_delta(%lld) too big! last(%lld) cur(%lld)\n",
+						stream->max_delta, cur_delta, stream->last_pts, packet.pts);
+				stream->max_delta = cur_delta;
+			}
+			stream->last_pts = packet.pts;
+		}
+#endif
+
 		if (send_packet(stream, &packet, false, packet.track_idx) < 0) {
 			os_atomic_set_bool(&stream->disconnected, true);
 			bfree(packet.data);
 			break;
 		}
+
+		stream->sent_frames++;
 		bfree(packet.data);
-		usleep(500);
+		if (0 == stream->sent_frames % sleep_freq)
+			usleep(10000);
 	}
 
 	if (disconnected(stream))
@@ -442,6 +485,7 @@ static void *send_thread(void *data)
 
 	stream->sent_headers = false;
 	os_event_reset(stream->stop_event);
+	os_event_signal(stream->stop_event);
 	os_atomic_set_bool(&stream->active, false);
 	return NULL;
 }
@@ -513,7 +557,7 @@ static bool init_connect(struct rtmp_stream *stream)
 	dstr_depad(&stream->key);
 
 	stream->max_shutdown_time_sec =
-		(int)mgw_data_get_int(settings, "max_shutdown_time_sec");
+		(int)mgw_data_get_int(output_settings, "max_shutdown_time_sec");
 
     dstr_copy(&stream->encoder_name, "FMLE/3.0 (compatible; FMSc/1.0)");
 

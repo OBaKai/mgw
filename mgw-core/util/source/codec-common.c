@@ -35,9 +35,6 @@ size_t mgw_get_aac_lc_header(
 	uint8_t buf[32] = {};
 	uint8_t samplingFrequencyIndex = get_samplerate_index(samplerate);
 
-	buf[i++] = 0xAF;        // 1010 11 1 1    (AAC, 44.1K, 16bits, stereo)
-    buf[i++] = 0x00;        //aac sequence header: 0x00, aac raw data:0x01
-
 	buf[i] = (AUDIO_AAC_LC << 3) & 0xf8;
 	buf[i++] |= (samplingFrequencyIndex >> 1) & 0x07;
 	buf[i] = (samplingFrequencyIndex << 7) & 0x80;
@@ -49,12 +46,32 @@ size_t mgw_get_aac_lc_header(
 	}
 	buf[i++] |= (((uint8_t)channels) << 3) & 0x78;
 
+	if (!(*header))
+		*header = bzalloc(i);
+
+	memcpy(*header, buf, i);
+	return i;
+}
+size_t mgw_get_aaclc_flv_header(
+			uint8_t channels, uint8_t samplesize,
+			uint32_t samplerate, uint8_t **header)
+{
+	int i = 0;
+	uint8_t buf[32] = {};
+
+	buf[i++] = 0xAF;        // 1010 11 1 1    (AAC, 44.1K, 16bits, stereo)
+    buf[i++] = 0x00;        //aac sequence header: 0x00, aac raw data:0x01
+	uint8_t *temp_header = buf + i;
+	i += mgw_get_aac_lc_header(channels, samplesize, samplerate, &temp_header);
+
 	if (samplesize == 8)
 		buf[0] &= 0xfd;
 	if (channels == 1)
 		buf[0] &=0xfe;
 
-	*header = bzalloc(i);
+	if (!(*header))
+		*header = bzalloc(i);
+
 	memcpy(*header, buf, i);
 	return i;
 }
@@ -181,7 +198,7 @@ static inline bool has_start_code(const uint8_t *data)
 
 int8_t mgw_avc_get_startcode_len(const uint8_t *data)
 {
-	if (!data || data[0]|| data[1])
+	if (!data || data[0] || data[1])
 		return -1;
 
 	if (data[2] == 1)

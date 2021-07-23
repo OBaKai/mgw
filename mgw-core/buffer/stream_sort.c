@@ -1,6 +1,7 @@
 #include "stream_sort.h"
 #include <time.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "util/base.h"
 #include "util/bmem.h"
@@ -196,7 +197,7 @@ unsigned int MemcpyToSortBuff(SC_ssbuff *ssbuf, char *pframe, unsigned int frame
 {
 	unsigned int position = ssbuf->position;
 	unsigned int wpos = ssbuf->position;
-    //_printd("data: data[-3]:%02x, data[-2]:%02x, data[-1]:%02x, data[0]:%02x, data[1]:%02x\n",\
+    //_printd("data: data[-3]:%02x, data[-2]:%02x, data[-1]:%02x, data[0]:%02x, data[1]:%02x\n",
     //    pframe[-3], pframe[-2], pframe[-1], pframe[0], pframe[1]);
 	if(position + frame_len <= ssbuf->datasize)
 	{
@@ -216,6 +217,10 @@ unsigned int MemcpyToSortBuff(SC_ssbuff *ssbuf, char *pframe, unsigned int frame
 		memcpy(ssbuf->pdata, pframe + left, len);
 		position = len;
 #endif
+		if (frame_len > position) {
+			_printd("-------------->>> memory error !\n");
+			assert(frame_len < position);
+		}
 		memcpy(ssbuf->pdata, pframe, frame_len);
 		position = frame_len;
 		wpos = 0;

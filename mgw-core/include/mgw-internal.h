@@ -229,7 +229,7 @@ struct mgw_output {
 	mgw_data_t	*(*get_encoder_settings)(mgw_output_t *output);
 	size_t		(*get_video_header)(mgw_output_t *output, uint8_t **header);
 	size_t		(*get_audio_header)(mgw_output_t *output, uint8_t **header);
-	bool		(*get_next_encoder_packet)(mgw_output_t *output, struct encoder_packet *packet);
+	int			(*get_next_encoder_packet)(mgw_output_t *output, struct encoder_packet *packet);
 };
 
 extern const struct mgw_output_info *find_output(const char *id);

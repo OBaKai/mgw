@@ -14,13 +14,14 @@ LIB_DIR = . \
 		  ../plugins/outputs/debug \
 		  ../plugins/sources/debug \
 		  ../plugins/formats/debug \
+		  ../plugins/thirdparty/debug \
 
 ifeq ($(strip $(PLATFORM)),)
 LIB_DIR += ../deps/lib/x86
 
-LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats \
--lmgw-buffer -lmgw-util -lavcodec -lavformat -lavfilter -lavutil -lpostproc -lswscale \
--lswresample -lavdevice -lx264 -lfdk-aac -lrtmp -lsrt -lx265 \
+LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats -lmgw-thirdparty \
+-lmgw-buffer -lmgw-util -lavformat -lavcodec -lavfilter -lavutil -lswscale -lpostproc \
+-lswresample -lavdevice -lrtmp -lsrt -lx264 -lx265 -lfdk-aac \
 -lssl -lcrypto -lz -ljansson -lrt \
 -lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto
 
@@ -29,7 +30,7 @@ LIB_DIR += /home/young/workDir/R8_switcher/common/lib \
 		  /home/young/workDir/R8_switcher/yb_rootfs/home/lib \
 		  /home/young/workDir/R8_switcher/media/gw_media/lib
 
-LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats \
+LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats -lmgw-thirdparty \
 -lmgw-buffer -lmgw-util -lavformat -lavcodec -lavfilter \
 -lswresample -lpostproc -lswscale -lavutil -lx264 \
 -lfdk-aac -lsrt \

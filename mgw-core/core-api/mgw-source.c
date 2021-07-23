@@ -1,3 +1,10 @@
+/**
+ * File: mgw-source.c
+ * 
+ * Description: The logic implement of mgw source module
+ * 
+ * Datetime: 2021/5/10
+ * */
 #include "mgw.h"
 
 #include "util/base.h"
@@ -64,12 +71,12 @@ void mgw_source_set_audio_extra_data(mgw_source_t *source,
 
 	if (!source)
 		return;
-	
+
 	if (source->context.data && !source->private_source)
 		return;
 
 	if (source->private_source) {
-		header_size = mgw_get_aac_lc_header(channels, samplesize, samplerate, &header);
+		header_size = mgw_get_aaclc_flv_header(channels, samplesize, samplerate, &header);
 		bmem_copy(&source->audio_header, (const char *)header, header_size);
         bfree(header);
 	}
@@ -328,39 +335,44 @@ void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet
 {
 	uint8_t *header = NULL;
 	size_t size = 0;
+	int8_t start_code = 0;
 	struct encoder_packet save_packet = {};
 
     if (!source || !packet || !source->buffer)
 		return;
 
 	memcpy(&save_packet, packet, sizeof(save_packet));
-	if (ENCODER_VIDEO == packet->type) {
-		if (packet->keyframe && ENCID_H264 == source->video_payload) {
-			size = mgw_parse_avc_header(&header, packet->data, packet->size);
-			if (size > 4 && header) {
-				mgw_source_set_video_extra_data(source, header, size);
-				save_packet.priority = FRAME_PRIORITY_LOW;
+	start_code = mgw_avc_get_startcode_len((const uint8_t*)packet->data);
+	/*if (start_code > 0) {
+		if (ENCODER_VIDEO == packet->type) {
+			if (packet->keyframe && ENCID_H264 == source->video_payload) {
+				size = mgw_parse_avc_header(&header, packet->data, packet->size);
+				if (size > 4 && header) {
+					mgw_source_set_video_extra_data(source, header, size);
+					save_packet.priority = FRAME_PRIORITY_LOW;
+					bfree(header);
+				}
+				save_packet.size = mgw_avc_get_keyframe(packet->data, packet->size, &save_packet.data);
+
+				blog(MGW_LOG_INFO, "Source save key frame(%ld)! data[-3]=%02x, "\
+						"data[-2]=%02x, data[-1]=%02x, data[0]=%02x data[1]=%02x",
+						save_packet.size ,save_packet.data[-3], save_packet.data[-2],
+						save_packet.data[-1], save_packet.data[0], save_packet.data[1]);
+			} else if (!packet->keyframe) {
+				save_packet.data = (uint8_t*)mgw_avc_find_startcode((const uint8_t*)save_packet.data,
+									(const uint8_t*)(save_packet.data + packet->size));
+				int8_t start_code_size = mgw_avc_get_startcode_len((const uint8_t*)save_packet.data);
+				if (start_code_size >= 0) {
+					save_packet.data += start_code_size;
+					save_packet.size -= start_code_size;
+				}
+				save_packet.priority = FRAME_PRIORITY_HIGH;
 			}
-			bfree(header);
-
-			save_packet.size = mgw_avc_get_keyframe(packet->data, packet->size, &save_packet.data);
-
-			blog(MGW_LOG_INFO, "Source save key frame(%ld)! data[-3]=%02x, "\
-					"data[-2]=%02x, data[-1]=%02x, data[0]=%02x data[1]=%02x",
-					save_packet.size ,save_packet.data[-3], save_packet.data[-2],
-					save_packet.data[-1], save_packet.data[0], save_packet.data[1]);
-
-		} else if (!packet->keyframe) {
-			save_packet.data = (uint8_t*)mgw_avc_find_startcode((const uint8_t*)save_packet.data,
-								(const uint8_t*)(save_packet.data + packet->size));
-			int8_t start_code_size = mgw_avc_get_startcode_len((const uint8_t*)save_packet.data);
-			if (start_code_size >=0) {
-				save_packet.data += start_code_size;
-				save_packet.size -= start_code_size;
-			}
-			save_packet.priority = FRAME_PRIORITY_HIGH;
 		}
-	}
+	} else {
+		save_packet.data += 4;
+		save_packet.size -= 4;
+	}*/
 
 	mgw_rb_write_packet(source->buffer, &save_packet);
 }

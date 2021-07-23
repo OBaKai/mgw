@@ -25,7 +25,7 @@ mgw_data_t *mgw_rb_get_default(void);
 struct source_param *mgw_rb_get_source_param(void *data);
 
 size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet);
-size_t mgw_rb_read_packet(void *data, struct encoder_packet *packet);
+int mgw_rb_read_packet(void *data, struct encoder_packet *packet);
 
 mgw_data_t *mgw_rb_get_encoder_settings(void *data);
 size_t mgw_rb_get_video_header(void *data, uint8_t **header);

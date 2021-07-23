@@ -83,6 +83,7 @@ static bool build_flv_meta_data(mgw_data_t *settings,
 
 	*size   = enc-buf;
     *output = (uint8_t *)bmemdup(buf, *size);
+	mgw_data_release(settings);
 	return true;
 }
 

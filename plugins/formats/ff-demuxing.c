@@ -1,3 +1,10 @@
+/**
+ * File: ff-demuxing.c
+ * 
+ * Description: Demux stream from local file or netstream by ffmpeg
+ * 
+ * Datetime: 2021/5/10
+ * */
 #include "ff-demuxing.h"
 #include "util/dstr.h"
 #include "util/bmem.h"
@@ -11,11 +18,11 @@
 #include <unistd.h>
 
 struct ff_demux {
-	struct dstr		src_file;
+	struct dstr			src_file;
 
-	AVFormatContext     *fmt;
-	AVStream            *video;
-	AVStream            *audio;
+	AVFormatContext		*fmt;
+	AVStream			*video;
+	AVStream			*audio;
 	AVPacket			pkt;
 	AVBSFContext		*video_filter_ctx;
 	FILE				*h264_file, *aac_file;
@@ -57,8 +64,13 @@ void *ff_demux_create(const char *url, bool save_file)
 	os_event_init(&demux->demux_stopping, OS_EVENT_TYPE_MANUAL);
 	os_sem_init(&demux->demux_sem, 0);
 
-	if (avformat_open_input(&demux->fmt, url, NULL, NULL) < 0) {
-		blog(MGW_LOG_ERROR, "Tried to open input:%s failed!", url);
+	// FILE *src_file = fopen(url, "r");
+	// if (!src_file) {
+	// 	blog(MGW_LOG_ERROR, "counldn't open the file %s", url);
+	// }
+
+	if ((ret = avformat_open_input(&demux->fmt, url, NULL, NULL)) < 0) {
+		blog(MGW_LOG_ERROR, "Tried to open input:%s failed, error:%s", url, av_err2str(ret));
 		goto error;
 	}
 
@@ -85,6 +97,7 @@ void *ff_demux_create(const char *url, bool save_file)
 			demux->aac_file = fopen("ff_demux_test.aac", "wb");
 	}
 
+	
 	/** Save video and audio to file must be initialize filter and open file*/
 	const AVBitStreamFilter *h264_filter = av_bsf_get_by_name("h264_mp4toannexb");
 	if (av_bsf_alloc(h264_filter, &demux->video_filter_ctx) < 0) {
@@ -96,8 +109,8 @@ void *ff_demux_create(const char *url, bool save_file)
 	} else {
 		AVCodecParameters *codecpar = NULL;
 		codecpar = demux->fmt->streams[demux->video_index]->codecpar;
-		if (codecpar)
-			avcodec_parameters_copy(demux->video_filter_ctx->par_in, codecpar);
+		// if (codecpar)
+		// 	avcodec_parameters_copy(demux->video_filter_ctx->par_in, codecpar);
 
 		av_bsf_init(demux->video_filter_ctx);
 	}
@@ -201,7 +214,7 @@ static void *demuxing_thread(void *arg)
 				packet.type = ENCODER_VIDEO;
 
 				/** filter the stream if save to file */
-				//fwrite(demux->pkt.data, demux->pkt.size, 1, demux->h264_file);
+				// fwrite(demux->pkt.data, demux->pkt.size, 1, demux->h264_file);
 				if (demux->video_filter_ctx) {
 					if (0 == av_bsf_send_packet(demux->video_filter_ctx, &demux->pkt)) {
 						//av_bsf_flush(demux->video_filter_ctx);
@@ -218,7 +231,7 @@ static void *demuxing_thread(void *arg)
 							packet.dts = ts_ms * 1000;
 							packet.data = video_pkt.data;
 
-							demux->proc_packet(demux->param, &packet);
+							//demux->proc_packet(demux->param, &packet);
 
 							sleep_ms = packet.pts - last_ts;
 							if (sleep_ms < 0)

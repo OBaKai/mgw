@@ -11,6 +11,10 @@ extern struct mgw_module sources_module;
 /* outputs */
 extern struct mgw_module outputs_module;
 
+/* ---------------------------------- */
+/* formats */
+extern struct mgw_module formats_module;
+
 static inline bool mgw_module_check_and_load_necessary_val(\
 					struct mgw_module *info,\
 					struct darray *modules,
@@ -49,6 +53,10 @@ void mgw_load_all_modules(struct mgw_core *core)
 	mgw_module_check_and_load_necessary_val(\
 			&outputs_module,(struct darray*)&core->modules,\
 			(struct darray*)&core->output_types, sizeof(struct mgw_output_info));
+	/* Formats */
+	mgw_module_check_and_load_necessary_val(\
+			&formats_module,(struct darray*)&core->modules,\
+			(struct darray*)&core->format_types, sizeof(struct mgw_format_info));
 }
 
 mgw_module_t *mgw_find_module(struct mgw_core *core, const char *name)

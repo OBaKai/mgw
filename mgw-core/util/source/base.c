@@ -133,7 +133,7 @@ char *get_localtime_str(void)
 
     time(&t);
     tm = localtime(&t);
-    snprintf(time_string, sizeof(time_string), "%04d-%02d-%02d-%02d-%02d-%02d",\
+    snprintf(time_string, sizeof(time_string), "%04d-%02d-%02d %02d:%02d:%02d",\
                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,\
                 tm->tm_hour, tm->tm_min, tm->tm_sec);
     return time_string;

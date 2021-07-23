@@ -10,7 +10,7 @@ extern "C"{
 
 #define _printd(fmt, ...)	printf ("[%s][%d]"fmt"\n", (char *)strrchr(__FILE__, '\\')?(strrchr(__FILE__, '/') + 1):__FILE__, __LINE__, ##__VA_ARGS__)
 
-#define SORT_SIZE_DEF	2*1024*1024
+#define SORT_SIZE_DEF	4*1024*1024
 #define SORT_TIME_DEF	20*1000
 
 typedef struct _sc_sortframe_

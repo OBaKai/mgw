@@ -7,9 +7,9 @@
 #include "util/base.h"
 
 /** Set ring buffer to 10M Bytes by default */
-#define RING_BUFFER_SIZE_DEF        20*1024*1024
+#define RING_BUFFER_SIZE_DEF        10*1024*1024
 /** Set ring buffer to 30 frames by default */
-#define RING_BUFFER_CAP_DEF         120
+#define RING_BUFFER_CAP_DEF         30
 /** Set ring buffer max frame size for getting */
 #define RING_BUFFER_MAX_FRAMESIZE   500*1024
 
@@ -19,14 +19,16 @@ struct ring_buffer {
 	BuffContext     *bc;
 	mgw_data_t      *settings;
 	void            *sort_list;
+
+	pthread_mutex_t write_mutex;
 };
 
 mgw_data_t *mgw_rb_get_default(void)
 {
     mgw_data_t *setting = mgw_data_create();
 
-    mgw_data_set_default_bool(setting, "sort", false);
-    mgw_data_set_default_bool(setting, "heap_mem", true);
+    mgw_data_set_default_bool(setting, "sort", true);
+    mgw_data_set_default_bool(setting, "heap_mem", false);
     mgw_data_set_default_bool(setting, "read_by_time", true);
     mgw_data_set_default_int(setting, "mem_size", RING_BUFFER_SIZE_DEF);
     mgw_data_set_default_int(setting, "capacity", RING_BUFFER_CAP_DEF);
@@ -36,7 +38,7 @@ mgw_data_t *mgw_rb_get_default(void)
 
 static int datacallback(void *puser, sc_sortframe *oframe)
 {
-	return PutOneFrameToBuff((BuffContext *)puser, oframe->frame, \
+	return PutOneFrameToBuff((BuffContext *)puser, (uint8_t*)oframe->frame, \
             oframe->frame_len, oframe->timestamp, oframe->frametype, oframe->priority);
 }
 
@@ -47,6 +49,8 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
 
     if (!settings)
         rb->settings = mgw_rb_get_default();
+
+	pthread_mutex_init(&rb->write_mutex, NULL);
 
     io_mode_t io;
     const char *io_m = mgw_data_get_string(rb->settings, "io_mode");
@@ -130,6 +134,7 @@ void mgw_rb_destroy(void *data)
 	if (rb->bc)
 		DeleteStreamBuff(rb->bc);
 
+	pthread_mutex_destroy(&rb->write_mutex);
 	bfree(rb);
 }
 
@@ -160,33 +165,35 @@ size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet)
         frame_type = FRAME_AAC;
     }
 
+	pthread_mutex_lock(&rb->write_mutex);
     if (rb->sort) {
         sc_sortframe iframe = {};
 		iframe.frametype = frame_type;
 		iframe.frame_len = packet->size;
 		iframe.timestamp = packet->pts;
-		iframe.frame = packet->data;
+		iframe.frame = (char *)packet->data;
         iframe.priority = packet->priority;
 		write_size = PutFrameStreamSort(&rb->sort_list, &iframe);
     } else {
         write_size = PutOneFrameToBuff(rb->bc, packet->data, \
                 packet->size, packet->pts, frame_type, packet->priority);
     }
+	pthread_mutex_unlock(&rb->write_mutex);
     return write_size;
 }
 
-size_t mgw_rb_read_packet(void *data, struct encoder_packet *packet)
+int mgw_rb_read_packet(void *data, struct encoder_packet *packet)
 {
-struct ring_buffer *rb = data;
-    size_t read_size = 0;
+	struct ring_buffer *rb = data;
+    int read_size = 0;
     if (!data || !packet)
-        return -1;
+        return FRAME_CONSUME_PERR;
 
     if (IO_MODE_WRITE == rb->bc->mode)
-        return -1;
+        return FRAME_CONSUME_PERR;
     frame_t frame_type = FRAME_UNKNOWN;
-    read_size = GetOneFrameFromBuff(rb->bc, (char **)&packet->data, RING_BUFFER_MAX_FRAMESIZE, \
-            (unsigned long long *)&packet->pts, &frame_type, &packet->priority);
+    read_size = GetOneFrameFromBuff(rb->bc, &packet->data, RING_BUFFER_MAX_FRAMESIZE,
+            						&packet->pts, &frame_type, &packet->priority);
 
     if (FRAME_AAC == frame_type)
         packet->type = ENCODER_AUDIO;

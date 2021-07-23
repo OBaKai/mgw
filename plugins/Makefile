@@ -1,6 +1,6 @@
 
-
 all:
+	$(MAKE) -C thirdparty
 	$(MAKE) -C sources
 	$(MAKE) -C formats
 	$(MAKE) -C outputs
@@ -9,6 +9,7 @@ all:
 
 .PHONY: clean
 clean:
+	$(MAKE) -C thirdparty clean
 	$(MAKE) -C sources clean
 	$(MAKE) -C formats clean
 	$(MAKE) -C outputs clean
@@ -17,6 +18,7 @@ clean:
 
 .PHONY: install
 install:
+	$(MAKE) -C thirdparty install
 	$(MAKE) -C sources install
 	$(MAKE) -C formats install
 	$(MAKE) -C outputs install
