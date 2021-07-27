@@ -76,6 +76,42 @@ size_t mgw_get_aaclc_flv_header(
 	return i;
 }
 
+size_t mgw_aac_adts_header(uint32_t samplerate, uint32_t channels,
+						uint8_t **header, size_t size)
+{
+	if (!header) return -1;
+
+	int profile = 2; // AAC LC
+	uint8_t freqIdx = get_samplerate_index(samplerate);
+	*header = bzalloc(7);	//fix header
+
+	// fill in ADTS data
+	(*header)[0] = (uint8_t) 0xFF;
+	(*header)[1] = (uint8_t) 0xF9;
+	(*header)[2] = (uint8_t) (((profile - 1) << 6) + (freqIdx << 2) + (channels >> 2));
+	(*header)[3] = (uint8_t) (((channels & 3) << 6) + (size >> 11));
+	(*header)[4] = (uint8_t) ((size & 0x7FF) >> 3);
+	(*header)[5] = (uint8_t) (((size & 7) << 5) + 0x1F);
+	(*header)[6] = (uint8_t) 0xFC;
+
+	return 7;
+}
+
+size_t mgw_aac_leave_adts(uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size)
+{
+	if (!(src[1] & 0x01)) {
+		int packet_len = ((src[3]&0x03) << 11) + (src[4] << 3) + ((src[5] & 0xe0) >> 5);
+		if (src_size == packet_len) {
+			dst = src + 9;
+			dst_size = src_size - 9;
+		}
+	} else {
+		dst = src + 7;
+		dst_size = src_size - 7;
+	}
+	return dst_size;
+}
+
 /** ISO/IEC 14496-15:2017  5.3.3.1.2 Syntax */
 /** 
 aligned(8) class AVCDecorderConfigurationRecord {
@@ -324,6 +360,58 @@ size_t mgw_parse_avc_header(uint8_t **header, uint8_t *data, size_t size)
     s_write(&s, pps, pps_size);
     *header = output.bytes.array;
     return output.bytes.num;
+}
+
+bool mgw_avc_avcc2annexb(struct encoder_packet *avcc_pkt, struct encoder_packet *annexb_pkt)
+{
+	if (!avcc_pkt || !avcc_pkt->data||
+		!annexb_pkt)
+		return false;
+
+	memcpy(annexb_pkt, avcc_pkt, sizeof(struct encoder_packet));
+	annexb_pkt->data[0] = 0;
+	annexb_pkt->data[1] = 0;
+	annexb_pkt->data[2] = 0;
+	annexb_pkt->data[3] = 1;
+
+	return true;
+}
+
+/**< Bigend */
+static inline uint8_t *put_be32(uint8_t *output, uint32_t nVal)
+{
+    output[3] = nVal & 0xff;
+    output[2] = nVal >> 8;
+    output[1] = nVal >> 16;
+    output[0] = nVal >> 24;
+    return output+4;
+}
+
+/**< NALU is bigend */
+bool mgw_avc_annexb2avcc(struct encoder_packet *annexb_pkt, struct encoder_packet *avcc_pkt)
+{
+	size_t start_code = 0;
+	if (!annexb_pkt || !annexb_pkt->data ||
+		annexb_pkt->size <=0 || !avcc_pkt)
+		return false;
+
+	if ((start_code = mgw_avc_get_startcode_len(annexb_pkt->data)) < 0)
+		return false;
+
+	if (start_code == 3) {
+		avcc_pkt->size = annexb_pkt->size + 1;
+		avcc_pkt->data = brealloc(avcc_pkt->data, avcc_pkt->size);
+		put_be32(avcc_pkt->data, (uint32_t)annexb_pkt->size - 3);
+		memcpy(avcc_pkt->data + 4, annexb_pkt->data + 3, annexb_pkt->size - 3);
+		bfree(annexb_pkt->data);
+	} else if (start_code == 4) {
+		memcpy(avcc_pkt, annexb_pkt, sizeof(struct encoder_packet));
+		put_be32(avcc_pkt->data, (uint32_t)annexb_pkt->size - 4);
+	} else {
+		return false;
+	}
+
+	return true;
 }
 
 /** ISO/IEC 14496-15:2017  8.3.3.1.2 Syntax  page 79 HEVCDecorderConfigurationRecord */

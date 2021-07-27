@@ -142,6 +142,9 @@ static void output_reconnect(struct mgw_output *output)
 	}
 }
 
+/**< First time reconnect must be return MGW_OUTPUT_DISCONNECTED value
+ *   and other time do not return MGW_OUTPUT_SUCCESS
+ */
 static inline bool can_reconnect(const mgw_output_t *output, int code)
 {
 	bool reconnect_active = output->reconnect_retry_max != 0;

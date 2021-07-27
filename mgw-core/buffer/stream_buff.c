@@ -375,16 +375,6 @@ unsigned long long CheckBuffDuration(BuffContext *pcontext)
 	return pstuFrames[w].stuFrameInfo.timestamp - pstuFrames[rp].stuFrameInfo.timestamp;
 }
 
-/**< Bigend */
-static inline uint8_t *put_be32(uint8_t *output, uint32_t nVal)
-{
-    output[3] = nVal & 0xff;
-    output[2] = nVal >> 8;
-    output[1] = nVal >> 16;
-    output[0] = nVal >> 24;
-    return output+4;
-}
-
 int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe,uint32_t maxframelen,
                         int64_t *timestamp, frame_t *frametype, int *priority)
 {
@@ -480,26 +470,18 @@ int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe,uint32_t maxfram
 		
 	}
 
-	int nalu_size = 0;//FRAME_AAC == pstuFrames[rp].stuFrameInfo.frametype ? 0 : 4;
 	unsigned int position = pstuFrames[rp].position;
 	if(position + pstuFrames[rp].len <= phead->datasize)
 	{
-        *pframe = bzalloc(pstuFrames[rp].len + nalu_size);
-		if (nalu_size)
-            put_be32(*pframe, pstuFrames[rp].len);
-
-		memcpy(*pframe + nalu_size, pstart_addr + position, pstuFrames[rp].len);
+		memcpy(*pframe, pstart_addr + position, pstuFrames[rp].len);
 	}
 	else
 	{
 		int left = phead->datasize - position;
 		int len = pstuFrames[rp].len - left;
-        *pframe = bzalloc(left + len + nalu_size);
-		if (nalu_size)
-            put_be32(*pframe, pstuFrames[rp].len);
 
-		memcpy(*pframe + nalu_size, pstart_addr + position, left);
-		memcpy(*pframe + nalu_size + left, pstart_addr, len);
+		memcpy(*pframe, pstart_addr + position, left);
+		memcpy(*pframe + left, pstart_addr, len);
 	}
 
 	*timestamp = pstuFrames[rp].stuFrameInfo.timestamp;
@@ -507,7 +489,7 @@ int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe,uint32_t maxfram
     *priority  = pstuFrames[rp].stuFrameInfo.priority;
 
 	pRead->u32RdFrameCount++;
-	return pstuFrames[rp].len + nalu_size;
+	return pstuFrames[rp].len;
 }
 
 int GetOneFrameFromBuff2(BuffContext *pcontext, SGetFrameInfo *pinfo)

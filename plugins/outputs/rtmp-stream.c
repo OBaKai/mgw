@@ -61,6 +61,7 @@ struct rtmp_stream {
     struct dstr     path, key, dest_ip;
     struct dstr     username, password;
     struct dstr     encoder_name;
+	uint8_t			*frame_buffer;
 
     RTMP            rtmp;
 
@@ -194,6 +195,7 @@ static void rtmp_stream_destroy(void *data)
 
     os_event_destroy(stream->stop_event);
 	os_sem_destroy(stream->send_sem);
+	bfree(stream->frame_buffer);
     bfree(stream);
     blog(MGW_LOG_INFO, "--------->>> destroy rtmp stream!");
 }
@@ -211,6 +213,7 @@ static void *rtmp_stream_create(mgw_data_t *setting, mgw_output_t *output)
     if (os_sem_init(&stream->send_sem, 0) != 0)
         goto rtmp_fail;
 
+	stream->frame_buffer = bzalloc(MGW_MAX_PACKET_SIZE + MGW_AVCC_HEADER_SIZE);
 	//os_event_signal(stream->stop_event);
 
     //UNUSED_PARAMETER(setting);
@@ -295,7 +298,7 @@ static bool discard_recv_data(struct rtmp_stream *stream, size_t size)
     return true;
 }
 
-static int send_packet(struct rtmp_stream *stream,
+static int send_packet_internal(struct rtmp_stream *stream,
 		struct encoder_packet *packet, bool is_header, size_t idx)
 {
 	uint8_t *data;
@@ -371,7 +374,7 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 	//must be AudioSpecificConfig -- aac
 	packet.size = context->get_audio_header(context, &header);
 	packet.data = bmemdup(header, packet.size);
-	return send_packet(stream, &packet, true, idx) >= 0;
+	return send_packet_internal(stream, &packet, true, idx) >= 0;
 }
 
 static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
@@ -390,7 +393,7 @@ static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
 	// must be AVCDecoderConfigurationRecord -- avc
 	packet.size = context->get_video_header(context, &header);
 	packet.data = bmemdup(header, packet.size);
-	return send_packet(stream, &packet, true, 0) >= 0;
+	return send_packet_internal(stream, &packet, true, 0) >= 0;
 }
 
 static inline bool send_headers(struct rtmp_stream *stream, int64_t ts)
@@ -407,65 +410,202 @@ static inline bool send_headers(struct rtmp_stream *stream, int64_t ts)
 	return true;
 }
 
+static inline int h264_get_nul_type(const char * buffer)
+{
+	uint32_t offset = (buffer[2] == 1) ? 3 : 4;
+	return buffer[offset] & 0x1f;
+}
+
+static void get_meta_withouthead(bool key_frame, char *indata, int in_len, char **outdata, int *out_len, 
+                                 char *sps_buf, int *sps_len, char *pps_buf, int *pps_len)
+{
+    uint32_t i = 0, parse_len = 0;
+    parse_len = in_len > 256 ? 256 : in_len;// UMIN(256, in_len);
+    bool find_idr = false, find_sps = false, find_pps = false;
+    uint32_t sps_start_addr = 0, pps_start_addr = 0;
+
+    //leaving the h.264 nalu header, e.g 0x00 0x00 0x00 0x01
+	*out_len  = in_len -4;
+    *outdata = indata + 4;
+    if (key_frame) {
+        //find sps and pps if exist
+        for ( i = 0; i < parse_len; i++) {
+    		if ((indata[i] == 0x00) && (indata[i+1] == 0x00) &&
+				(indata[i+2] == 0x00) && (indata[i+3] == 0x01)) {
+
+                uint8_t type = h264_get_nul_type(&indata[i]);
+                if (0x06 == type || type == 0x07 || type == 0x08) {
+                    if (type == 0x07)
+                        sps_start_addr = indata + i + ((indata[i+2] == 1) ? 3 : 4);
+                    else if (type == 0x08)
+                        pps_start_addr = indata + i + ((indata[i+2] == 1) ? 3 : 4);
+
+                    if (0 != sps_start_addr && type != 0x07) {
+                        *sps_len = (indata + i) - sps_start_addr;
+
+                        if ( *sps_len < 128)
+                            memcpy(sps_buf, sps_start_addr, *sps_len);
+                        else
+                            break;
+
+                        sps_start_addr = 0;
+                        find_sps = true;
+                    } else if(0 != pps_start_addr && type != 0x08) {
+                        *pps_len = (indata + i) - pps_start_addr;
+
+                        if ( *pps_len < 128)
+                            memcpy(pps_buf, pps_start_addr, *pps_len);  
+                        else
+                            break;
+
+                        pps_start_addr = 0;
+                        find_pps = true;
+                    }
+                    continue;
+                } else if(type == 0x05) {
+                    if (find_sps != true && 0 != sps_start_addr) {
+                        *sps_len = (indata + i) - sps_start_addr;
+                        if (*sps_len < 128)
+                            memcpy(sps_buf, sps_start_addr, *sps_len);
+                        else
+                            break;
+
+                        sps_start_addr = 0;
+                    }
+                    else if(find_pps != true && 0 != pps_start_addr) {
+                        *pps_len = (indata + i) - pps_start_addr;
+                        if ( *pps_len < 128)
+                            memcpy(pps_buf, pps_start_addr, *pps_len);
+                        else
+                            break;
+
+                        pps_start_addr = 0;
+                    }
+
+                    find_idr = true;
+                    break;
+                }
+    		}
+        }
+        //reset the I frame head pointer
+        if (find_idr) {
+            *out_len  = in_len - i - 4;
+            *outdata = indata + i + 4;
+        } else {
+            *out_len  = in_len -4;
+            *outdata = indata + 4;
+        }
+    }
+}
+
+/**< Bigend */
+static inline uint8_t *put_be32(uint8_t **output, uint32_t nVal)
+{
+    (*output)[3] = nVal & 0xff;
+    (*output)[2] = nVal >> 8;
+    (*output)[1] = nVal >> 16;
+    (*output)[0] = nVal >> 24;
+    return (*output)+4;
+}
+
+static bool send_key_frame(struct rtmp_stream *stream, struct encoder_packet *packet)
+{
+	volatile uint8_t *data = NULL;
+	volatile size_t size = 0;
+
+	size = mgw_avc_get_keyframe((const uint8_t*)packet->data,
+										packet->size, &data);
+	if (size <= 0) {
+		blog(MGW_LOG_ERROR, "Couldn't find key frame!, size = %d", size);
+		return true;
+	}
+
+	packet->data = data - 4;
+	// blog(MGW_LOG_INFO, "key frame(%d): data(%p) data[0]:%02x,data[1]:%02x,data[2]:%02x,data[3]:%02x,data[4]:%02x",
+	// 			packet->size, packet->data, packet->data[0],packet->data[1],
+	// 			packet->data[2],packet->data[3],packet->data[4]);
+
+	put_be32(&packet->data, size);
+	packet->size = size + 4;
+	// blog(MGW_LOG_INFO, "start_code(%d) sen frame(%d): data[0]:%02x,data[1]:%02x,data[2]:%02x,data[3]:%02x,data[4]:%02x",
+	// 			start_code, sen_packet.size, sen_packet.data[0],sen_packet.data[1],
+	// 			sen_packet.data[2],sen_packet.data[3],sen_packet.data[4]);
+	return send_packet_internal(stream, packet, false, packet->track_idx) >= 0;
+}
+
+static inline bool send_packet(struct rtmp_stream *stream, struct encoder_packet *packet)
+{
+	if (packet->type == ENCODER_AUDIO) {
+		if (!(packet->data[1] & 0x01)) {
+			int packet_len = ((packet->data[3]&0x03) << 11) + \
+							(packet->data[4] << 3) + ((packet->data[5] & 0xe0) >> 5);
+			if (packet->size == packet_len) {
+				packet->data += 9;
+				packet->size -= 9;
+			}
+		} else {
+			packet->data += 7;
+			packet->size -= 7;
+		}
+	} else if (packet->type == ENCODER_VIDEO) {
+		int start_code = mgw_avc_get_startcode_len(packet->data);
+		if (start_code == 3) {
+			packet->data -= 1;
+			put_be32(packet->data, packet->size - 3);
+			packet->size += 1;
+		} else if (start_code == 4) {
+			put_be32(packet->data, packet->size - 4);
+		} else if (start_code < 0) {
+			blog(MGW_LOG_ERROR, "Couldn't find the NALU start code, "
+						"data[0]:%02x, data[1]:%02x, data[2]:%02x, data[3]:%02x, data[3]:%02x",
+						packet->data[0], packet->data[1], packet->data[2],packet->data[3],packet->data[4]);
+			return true;
+		}
+	}
+
+	return send_packet_internal(stream, packet, false, packet->track_idx) >= 0;
+}
+
 static void *send_thread(void *data)
 {
 	struct rtmp_stream *stream = data;
 	int ret = 0, sleep_freq = 3;
+	bool success = false;
+
+#define SET_DISCONNECT(stream) do { \
+		os_atomic_set_bool(&stream->disconnected, true); \
+		break; \
+	} while (false)
 
 	os_set_thread_name("rtmp-stream: send_thread");
 	blog(MGW_LOG_INFO, "rtmp-stream thread running!");
-    while(/*os_sem_wait(stream->send_sem) == 0*/os_atomic_load_bool(&stream->active)) {
+    while(active(stream)) {
 		if (stopping(stream))
 			break;
 
-		struct encoder_packet packet = {};
+		volatile struct encoder_packet packet = {};
+		packet.data = stream->frame_buffer + MGW_AVCC_HEADER_SIZE;
 		if (0 >= (ret = stream->output->get_next_encoder_packet(
 								stream->output, &packet))) {
-			// if (FRAME_CONSUME_FAST == ret) {
-			// 	sleep_freq++;
-			// 	if (sleep_freq > 8)
-			// 		sleep_freq = 8;
-			// 	blog(MGW_LOG_ERROR, "----------->> too fast!");
-			// }
-			// else if (FRAME_CONSUME_SLOW == ret) {
-			// 	sleep_freq--;
-			// 	if (sleep_freq < 2)
-			// 		sleep_freq = 3;
-			// 	blog(MGW_LOG_ERROR, "----------->> too slow!");
-			// }
             continue;
         }
 
 		if (!stream->sent_headers || FRAME_PRIORITY_LOW == packet.priority) {
-			if (!send_headers(stream, stream->sent_headers?packet.pts:0)) {
-				os_atomic_set_bool(&stream->disconnected, true);
-				bfree(packet.data);
-				break;
-			}
+			if (!send_headers(stream, stream->sent_headers?packet.pts:0))
+				SET_DISCONNECT(stream);
 		}
 
-#ifdef TEST_STREAM_TIMESTAMP
-		if ((packet.pts < stream->last_pts)) {
-			tlog(TLOG_ERROR, "--------------->>> cur pts(%llu) < start pts(%lld)\n", packet.pts, stream->start_dts_offset);
+		if (packet.keyframe && ENCODER_VIDEO == packet.type &&
+					FRAME_PRIORITY_LOW == packet.priority) {
+			if (!send_key_frame(stream, &packet))
+				SET_DISCONNECT(stream);
 		} else {
-			uint64_t cur_delta = packet.pts - stream->last_pts;
-			if ((cur_delta > stream->max_delta) && (stream->last_pts > 0)) {
-				tlog(TLOG_ERROR, "------------->>>> max_delta(%lld) cur_delta(%lld) too big! last(%lld) cur(%lld)\n",
-						stream->max_delta, cur_delta, stream->last_pts, packet.pts);
-				stream->max_delta = cur_delta;
-			}
-			stream->last_pts = packet.pts;
-		}
-#endif
-
-		if (send_packet(stream, &packet, false, packet.track_idx) < 0) {
-			os_atomic_set_bool(&stream->disconnected, true);
-			bfree(packet.data);
-			break;
+			packet.keyframe = false;
+			if (!send_packet(stream, &packet))
+				SET_DISCONNECT(stream);
 		}
 
 		stream->sent_frames++;
-		bfree(packet.data);
 		if (0 == stream->sent_frames % sleep_freq)
 			usleep(10000);
 	}
@@ -486,7 +626,9 @@ static void *send_thread(void *data)
 	stream->sent_headers = false;
 	os_event_reset(stream->stop_event);
 	os_event_signal(stream->stop_event);
-	os_atomic_set_bool(&stream->active, false);
+	success = os_atomic_set_bool(&stream->active, false);
+
+	UNUSED_PARAMETER(success);
 	return NULL;
 }
 

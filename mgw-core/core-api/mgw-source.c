@@ -343,6 +343,19 @@ void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet
 
 	memcpy(&save_packet, packet, sizeof(save_packet));
 	start_code = mgw_avc_get_startcode_len((const uint8_t*)packet->data);
+	if (start_code > 0) {
+		if (ENCODER_VIDEO == packet->type) {
+			if (packet->keyframe && ENCID_H264 == source->video_payload) {
+				size = mgw_parse_avc_header(&header, packet->data, packet->size);
+				if (size > 4 && header) {
+					mgw_source_set_video_extra_data(source, header, size);
+					save_packet.priority = FRAME_PRIORITY_LOW;
+					bfree(header);
+				}
+			}
+		}
+	}
+
 	/*if (start_code > 0) {
 		if (ENCODER_VIDEO == packet->type) {
 			if (packet->keyframe && ENCID_H264 == source->video_payload) {

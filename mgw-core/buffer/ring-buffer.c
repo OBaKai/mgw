@@ -200,8 +200,10 @@ int mgw_rb_read_packet(void *data, struct encoder_packet *packet)
     else
         packet->type = ENCODER_VIDEO;
 
-    if (FRAME_I || FRAME_IDR)
+    if (frame_type == FRAME_I || frame_type == FRAME_IDR)
         packet->keyframe = true;
+	else
+		packet->keyframe = false;
 
     packet->size = read_size;
     return read_size;

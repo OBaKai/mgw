@@ -44,6 +44,8 @@ struct srt_stream {
 
 	uint8_t					*left_data;
 	uint32_t				left_size;
+
+	uint8_t					*frame_buffer;
 	struct dstr				uri;
 };
 
@@ -103,9 +105,9 @@ int srt_stream_proc_packet(void *opaque, uint8_t *buf, int buf_size)
 		stream->left_size = 0;
 	}
 
-	if ((stream->total_sent_frames % 20) == 0)
-		blog(MGW_LOG_INFO, "srt stream sending mpegts stream... packet:%llu, bytes:%llu",
-						stream->total_sent_frames, stream->total_sent_bytes);
+	// if ((stream->total_sent_frames % 20) == 0)
+	// 	blog(MGW_LOG_INFO, "srt stream sending mpegts stream... packet:%llu, bytes:%llu",
+	// 					stream->total_sent_frames, stream->total_sent_bytes);
 
 	/**< mgw_libsrt_write send data size must be the settings payload size */
 	while (left_size > payload_size) {
@@ -169,7 +171,8 @@ static void srt_stream_destroy(void *data)
 
 	if (active(stream) && !stopping(stream))
 		os_event_signal(stream->stop_event);
-	if (stopping(stream))
+
+	if (stopping(stream) && active(stream))
 		pthread_join(stream->send_thread, NULL);
 
 	mgw_data_release(stream->settings);
@@ -181,6 +184,7 @@ static void srt_stream_destroy(void *data)
 	dstr_free(&stream->uri);
 	os_event_destroy(stream->stop_event);
 	bfree(stream->left_data);
+	bfree(stream->frame_buffer);
 	bfree(stream);
 }
 
@@ -193,6 +197,7 @@ static void *srt_stream_create(mgw_data_t *setting, mgw_output_t *output)
 
 	struct srt_stream *stream = bzalloc(sizeof(struct srt_stream));
 	stream->left_data = bzalloc(SRT_MAX_PACKET_SIZE);
+	stream->frame_buffer = bzalloc(MGW_MAX_PACKET_SIZE);
 	stream->output = output;
 	stream->settings = setting;
 
@@ -247,6 +252,12 @@ static int init_connect(struct srt_stream *stream)
 		return MGW_OUTPUT_BAD_PATH;
 	}
 
+	os_atomic_set_bool(&stream->disconnected, false);
+	stream->total_sent_bytes	= 0;
+	stream->total_sent_frames	= 0;
+	stream->left_size			= 0;
+	stream->send_error_cnt		= 0;
+
 	/**< mpegts startup */
 	//header_size = stream->output->get_video_header(stream->output, &header);
 	if (stream->mpegts_info && stream->mpegts) {
@@ -255,7 +266,7 @@ static int init_connect(struct srt_stream *stream)
 		if (!success) {
 			blog(MGW_LOG_ERROR, "Srt stream start mpegts failed!");
 			//bfree(header);
-			return MGW_OUTPUT_CONNECT_FAILED;
+			return MGW_OUTPUT_INVALID_STREAM;
 		}
 	}
 	//bfree(header);
@@ -267,7 +278,7 @@ static int init_connect(struct srt_stream *stream)
 		return MGW_OUTPUT_CONNECT_FAILED;
 	}
 	blog(MGW_LOG_INFO, "Connect to srt uri:'%s' success!", stream->uri.array);
-	os_atomic_set_bool(&stream->active, true);
+
 	return MGW_OUTPUT_SUCCESS;
 }
 
@@ -275,37 +286,44 @@ static void *connect_and_send_thread(void *arg)
 {
 	struct srt_stream *stream = arg;
 	int ret = 0;
+
+	os_set_thread_name("srt stream: connect_and_send_thread");
+
 	if ((ret = init_connect(stream)) != MGW_OUTPUT_SUCCESS) {
 		tlog(TLOG_ERROR, "Tried to connect srt failed, ret[%d]\n", ret);
 		goto error;
 	}
+	os_atomic_set_bool(&stream->active, true);
 
 	while(active(stream)) {
 		if (stopping(stream) || disconnected(stream))
 			break;
+
 		struct encoder_packet packet = {};
+		packet.data = stream->frame_buffer;
 		if (stream->output->get_next_encoder_packet(
 						stream->output, &packet) <= 0) {
+			usleep(5 *1000);
 			continue;
 		}
 
 		if ((ret = stream->mpegts_info->send_packet(stream->mpegts, &packet)) < 0) {
-			bfree(packet.data);
 			usleep(5*1000);
 			continue;
 		}
-		bfree(packet.data);
 		// blog(MGW_LOG_INFO, "Send a packet data to mpegts success! size:%d", packet.size);
 		stream->total_sent_frames++;
 
 		if ((stream->total_sent_frames % 4) == 0)
 			usleep(10*1000);
 	}
-	ret = MGW_OUTPUT_DISCONNECTED;
-	if (disconnected(stream))
+
+	if (disconnected(stream)) {
 		blog(MGW_LOG_INFO, "Disconnected from %s", stream->uri.array);
-	else
+		ret = MGW_OUTPUT_DISCONNECTED;
+	} else {
 		blog(MGW_LOG_INFO, "User stopped the stream");
+	}
 
 	stream->output->last_error_status = stream->last_error_code;
 	mgw_libsrt_close(&stream->srt_context);
@@ -319,8 +337,6 @@ error:
         blog(MGW_LOG_INFO, "srt stream signal stop!");
 	}
 	os_event_reset(stream->stop_event);
-	// os_event_signal(stream->stop_event);
-	os_atomic_set_bool(&stream->disconnected, true);
 	os_atomic_set_bool(&stream->active, false);
 	return NULL;
 }
@@ -342,18 +358,13 @@ static bool srt_stream_start(void *data)
 static void srt_stream_stop(void *data)
 {
 	struct srt_stream *stream = data;
-	if (!stream)
+	if (!stream || stopping(stream))
 		return;
 
-	if (stopping(stream))
-		return;
-
-	if (active(stream)) {
+	if (active(stream))
 		os_event_signal(stream->stop_event);
-
-	} else {
+	else
 		stream->output->signal_stop(stream->output, MGW_OUTPUT_SUCCESS);
-	}
 }
 
 static uint64_t srt_stream_get_total_bytes(void *data)

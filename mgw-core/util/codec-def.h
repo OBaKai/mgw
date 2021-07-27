@@ -8,6 +8,8 @@ extern "C" {
 #endif
 
 #define MAX_PLANES  8
+#define MGW_MAX_PACKET_SIZE		512000	//500 KB
+#define MGW_AVCC_HEADER_SIZE	4
 
 #define FRAME_PRIORITY_LOW      1
 #define FRAME_PRIORITY_HIGH     2
@@ -176,15 +178,21 @@ size_t mgw_avc_get_sps(const uint8_t *data, size_t size, uint8_t **sps);
 size_t mgw_avc_get_pps(const uint8_t *data, size_t size, uint8_t **pps);
 size_t mgw_avc_get_keyframe(const uint8_t *data, size_t size, uint8_t **keyframe);
 
+bool mgw_avc_avcc2annexb(struct encoder_packet *avcc_pkt, struct encoder_packet *annexb_pkt);
+bool mgw_avc_annexb2avcc(struct encoder_packet *annexb_pkt, struct encoder_packet *avcc_pkt);
+
+size_t mgw_parse_avc_header(uint8_t **header, uint8_t *data, size_t size);
+size_t mgw_parse_hevc_header(uint8_t **header, uint8_t *data, size_t size);
+
 size_t mgw_get_aac_lc_header(
 			uint8_t channels, uint8_t samplesize,
 			uint32_t samplerate, uint8_t **header);
 size_t mgw_get_aaclc_flv_header(
 			uint8_t channels, uint8_t samplesize,
 			uint32_t samplerate, uint8_t **header);
-
-size_t mgw_parse_avc_header(uint8_t **header, uint8_t *data, size_t size);
-size_t mgw_parse_hevc_header(uint8_t **header, uint8_t *data, size_t size);
+size_t mgw_aac_adts_header(uint32_t samplerate, uint32_t channels,
+						uint8_t **header, size_t size);
+size_t mgw_aac_leave_adts(uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size);
 
 #ifdef __cplusplus
 }

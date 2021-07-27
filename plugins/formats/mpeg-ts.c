@@ -53,6 +53,16 @@ static const char *mpegts_get_name(void *type)
 	return MPEGTS_MODULE_NAME;
 }
 
+static inline bool has_video(struct mpegts_format *ts)
+{
+	return !!ts->fmt_ctx && !!ts->video_stream;
+}
+
+static inline bool has_audio(struct mpegts_format *ts)
+{
+	return !!ts->fmt_ctx && !!ts->audio_stream;
+}
+
 static inline enum AVCodecID get_codec_id(const char *id)
 {
 	if (!strncasecmp(id, "h264", 4) ||
@@ -230,7 +240,7 @@ static void *mpegts_create(mgw_data_t *settings, int flags,
 	ts->opaque		 = opaque;
 	ts->write_packet = write_packet;
 	ts->settings 	 = mgw_data_newref(settings);
-
+	os_atomic_set_bool(&ts->disconnected, false);
 	dstr_copy(&ts->dst_file, "srt_test.ts");
 
 	int ret = avformat_alloc_output_context2(&ts->fmt_ctx, NULL, "mpegts", ts->dst_file.array);
@@ -269,8 +279,13 @@ error:
 static bool mpegts_start(void *data)
 {
 	struct mpegts_format *ts = data;
-	if (!ts) return false;
-	if (disconnected(ts) && actived(ts)) {
+	if (!ts)
+		return false;
+
+	ts->last_dts			= 0;
+	ts->start_dts_offset	= 0;
+	
+	if (disconnected(ts)) {
 		os_atomic_set_bool(&ts->disconnected, false);
 		return true;
 	}
@@ -280,16 +295,14 @@ static bool mpegts_start(void *data)
 	if (!mpegts_add_audio_stream(ts))
 		return false;
 
-	os_atomic_set_bool(&ts->active, true);
-
 	av_dump_format(ts->fmt_ctx, 0, ts->dst_file.array, 1);
-
 	if (avformat_write_header(ts->fmt_ctx, NULL) < 0) {
 		blog(MGW_LOG_ERROR, "Tried to write mpegts header failed!");
 		return false;
 	}
-	blog(MGW_LOG_INFO, "wirte mpegts header success!");
+	os_atomic_set_bool(&ts->active, true);
 
+	blog(MGW_LOG_INFO, "wirte mpegts header success!");
 	return true;
 }
 
@@ -297,7 +310,7 @@ static void mpegts_stop(void *data)
 {
 	struct mpegts_format *ts = data;
 	if (!ts) return;
-
+	blog(MGW_LOG_INFO, "stop mpegts!");
 	os_atomic_set_bool(&ts->disconnected, true);
 }
 
@@ -307,7 +320,8 @@ static size_t mpegts_send_packet(void *data, struct encoder_packet *packet)
 	struct mpegts_format *ts = data;
 	const AVRational time_base = (AVRational){1, 1000};
 	AVStream *stream = NULL;
-	if (!ts || !actived(ts) || !packet || disconnected(ts))
+	if (!ts || !actived(ts) ||
+		!packet || disconnected(ts))
 		return -1;
 
 	AVPacket snd_packet = {};
