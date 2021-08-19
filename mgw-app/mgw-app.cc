@@ -55,13 +55,13 @@ int main(int argc, char *argv[])
 	tlog_init(MGW_LOG_FILENAME, MGW_LOG_FILELEN, MGW_LOG_FILECNT,
 				MGW_LOG_BLOCKSIZE, MGW_LOG_BUFFERSIZE, MGW_LOG_MULTIWRITE);
 
-	Message &msg = Message::GetInstance();
+	// Message &msg = Message::GetInstance();
 
-	if (msg_status::MSG_STATUS_SUCCESS !=
-		msg.Register("/home/young/workDir/mgw/install/bin/server-config-test.json")) {
-		blog(MGW_LOG_ERROR, "Register api and message server failed!");
-		goto finished;
-	}
+	// if (msg_status::MSG_STATUS_SUCCESS !=
+	// 	msg.Register("/home/young/workDir/mgw/install/bin/server-config-test.json")) {
+	// 	blog(MGW_LOG_ERROR, "Register api and message server failed!");
+	// 	goto finished;
+	// }
 
     if (mgw_app_startup("mgw-config.json"))
         blog(MGW_LOG_DEBUG, "mgw startup success");
@@ -77,8 +77,8 @@ int main(int argc, char *argv[])
     mgw_data_release(source_settings);
 
     /** start demux and send packet to source */
-	// demux = ff_demux_create("/home/young/workDir/mgw/install/bin/ppp.mp4", false);
-	// ff_demux_start(demux, proc_packet, stream);
+	demux = ff_demux_create("/home/young/workDir/mgw/install/bin/ppp.mp4", false);
+	ff_demux_start(demux, proc_packet, stream);
 
 	// demux = ff_demux_create("rtmp://192.168.0.16/live/stream0", false);
 

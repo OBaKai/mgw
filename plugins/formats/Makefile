@@ -1,8 +1,6 @@
 SRC_DIR = .
 
 INC_DIR = ./ ../ \
-		  /home/young/workDir/R8_switcher/media/mp4/include/ffmpeg \
-		  /home/young/workDir/R8_switcher/yb_rootfs/home/include \
 		  ../../mgw-core \
 		  ../../mgw-core/include \
 		  ../outputs
@@ -10,7 +8,12 @@ INC_DIR = ./ ../ \
 LIB_DIR = . \
 		  ../../deps/lib/x86
 
-INSTALL_DIR = ../../install
+ifeq ($(strip $(PLATFORM)),)
+INC_DIR += ../../deps/include
+else
+INC_DIR += /home/young/workDir/R8_switcher/media/mp4/include/ffmpeg \
+		   /home/young/workDir/R8_switcher/yb_rootfs/home/include
+endif
 
 TARGET = libmgw-formats.so
 TARGET_TYPE = "shared"

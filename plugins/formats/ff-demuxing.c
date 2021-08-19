@@ -11,23 +11,8 @@
 #include "util/base.h"
 #include "util/threading.h"
 
-#include "libavutil/avstring.h"
-#include "libavutil/eval.h"
-#include "libavutil/mathematics.h"
-#include "libavutil/pixdesc.h"
-#include "libavutil/imgutils.h"
-#include "libavutil/dict.h"
-#include "libavutil/parseutils.h"
-#include "libavutil/samplefmt.h"
-#include "libavutil/avassert.h"
-#include "libavutil/time.h"
-#include "libavutil/bprint.h"
-#include "libavutil/log.h"
 #include "libavformat/avformat.h"
-#include "libavdevice/avdevice.h"
 #include "libswscale/swscale.h"
-#include "libavutil/opt.h"
-#include "libavcodec/avfft.h"
 #include "libswresample/swresample.h"
 
 #include <stdio.h>
@@ -75,9 +60,7 @@ void *ff_demux_create(const char *url, bool save_file)
     int ret = 0;
     if (!url)
         return NULL;
-	AVFormatContext *fmtctx = NULL;
-	av_log_set_level(AV_LOG_TRACE);
-	avdevice_register_all();
+
 	avformat_network_init();
 
 	struct ff_demux *demux = bzalloc(sizeof(struct ff_demux));
@@ -85,26 +68,25 @@ void *ff_demux_create(const char *url, bool save_file)
 	os_event_init(&demux->demux_stopping, OS_EVENT_TYPE_MANUAL);
 	os_sem_init(&demux->demux_sem, 0);
 
-	fmtctx = avformat_alloc_context();
-	if ((ret = avformat_open_input(&fmtctx, url, NULL, NULL)) < 0) {
+	demux->fmt = avformat_alloc_context();
+	if ((ret = avformat_open_input(&demux->fmt, url, NULL, NULL)) < 0) {
 		blog(MGW_LOG_ERROR, "Tried to open input:%s failed, error:%s", url, av_err2str(ret));
 		goto error;
 	}
 
-	if (avformat_find_stream_info(fmtctx, NULL) < 0) {
+	if (avformat_find_stream_info(demux->fmt, NULL) < 0) {
 		blog(MGW_LOG_ERROR, "Tried to find stream info failed!");
 		goto error;
 	}
-	av_dump_format(fmtctx, 0, url, 0);
-	// demux->fmt = fmtctx;
-	if ((ret = av_find_best_stream(fmtctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0) {
+
+	if ((ret = av_find_best_stream(demux->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0) {
 		blog(MGW_LOG_INFO, "Couldn't found video stream!");
 	} else {
 		demux->video_index = ret;
 		demux->video = demux->fmt->streams[ret];
 		if (!demux->h264_file && save_file)
 			demux->h264_file = fopen("ff_demux_test.h264", "wb");
-		blog(MGW_LOG_INFO, "video width:%d, height:%d\n",
+		blog(MGW_LOG_INFO, "video width:%d, height:%d",
 				demux->video->codecpar->width, demux->video->codecpar->height);
 	}
 
