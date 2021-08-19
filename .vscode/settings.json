@@ -87,6 +87,12 @@
 		"avformat.h": "c",
 		"mathematics.h": "c",
 		"mgw-formats.h": "c",
-		"srt.h": "c"
+		"srt.h": "c",
+		"strstream": "cpp",
+		"tlog.h": "c",
+		"ws-client.h": "c",
+		"libwebsockets.h": "c",
+		"ff-demuxing.h": "c",
+		"message-def.h": "c"
 	}
 }

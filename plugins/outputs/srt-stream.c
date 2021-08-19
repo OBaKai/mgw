@@ -34,6 +34,7 @@ struct srt_stream {
 	uint8_t					send_error_cnt;
 	uint64_t				total_sent_bytes;
 	uint64_t				total_sent_frames;
+	int64_t					last_dts;
 	os_event_t				*stop_event;
 	int						last_error_code;
 	int						failed_sent;
@@ -134,20 +135,21 @@ int srt_stream_proc_packet(void *opaque, uint8_t *buf, int buf_size)
 		int full_ts_sizes = 0;
 		int ts_left = left_size % MPEGTS_FIX_SIZE;
 		full_ts_sizes = ts_left ? left_size - ts_left : left_size;
+		if (full_ts_sizes > 0) {
+			ret = mgw_libsrt_write(stream->srt_context, (const uint8_t*)send_data + send_seek, full_ts_sizes);
+			if (-5009 == ret || -2001 == ret || -5004 == ret ||
+				-17 == ret || (-90 >= ret && ret >= -113))
+				goto error;
+			else if (ret < 0)
+				stream->send_error_cnt++;
+			else
+				stream->total_sent_bytes += payload_size;
 
-		ret = mgw_libsrt_write(stream->srt_context, (const uint8_t*)send_data + send_seek, full_ts_sizes);
-		if (-5009 == ret || -2001 == ret || -5004 == ret ||
-			-17 == ret || (-90 >= ret && ret >= -113))
-			goto error;
-		else if (ret < 0)
-			stream->send_error_cnt++;
-		else
-			stream->total_sent_bytes += payload_size;
-
-		send_seek += full_ts_sizes;
+			send_seek += full_ts_sizes;
+		}
 
 		/**< The left data that not full a ts packet must save and be sent at next sending */
-		if (ts_left) {
+		if (ts_left > 0) {
 			memmove(stream->left_data, send_data + send_seek, ts_left);
 			stream->left_size = ts_left;
 		}
@@ -176,8 +178,8 @@ static void srt_stream_destroy(void *data)
 		pthread_join(stream->send_thread, NULL);
 
 	mgw_data_release(stream->settings);
-	if (stream->mpegts_info && stream->mpegts) {
-		stream->mpegts_info->destroy(stream->mpegts);
+	if (stream->mpegts_info/* && stream->mpegts*/) {
+		//stream->mpegts_info->destroy(stream->mpegts);
 		bfree(stream->mpegts_info);
 	}
 	mgw_libsrt_destroy(stream->srt_context);
@@ -260,7 +262,16 @@ static int init_connect(struct srt_stream *stream)
 
 	/**< mpegts startup */
 	//header_size = stream->output->get_video_header(stream->output, &header);
-	if (stream->mpegts_info && stream->mpegts) {
+	if (stream->mpegts_info) {
+		if (!stream->mpegts) {
+			mgw_data_t *source_info = stream->output->get_encoder_settings(stream->output);
+			if (!source_info) {
+				tlog(TLOG_ERROR, "No source informations!\n");
+				return MGW_OUTPUT_ERROR;
+			}
+			stream->mpegts = stream->mpegts_info->create(source_info, \
+							MGW_FORMAT_NO_FILE, srt_stream_proc_packet, stream);
+		}
 		//stream->mpegts_info->set_extra_data(stream->mpegts, (const uint8_t*)header, header_size);
 		success = stream->mpegts_info->start(stream->mpegts);
 		if (!success) {
@@ -278,6 +289,8 @@ static int init_connect(struct srt_stream *stream)
 		return MGW_OUTPUT_CONNECT_FAILED;
 	}
 	blog(MGW_LOG_INFO, "Connect to srt uri:'%s' success!", stream->uri.array);
+	int64_t maxbw = ((6144+128) * 5000) / 16;
+	mgw_libsrt_set_maxbw(stream->srt_context, maxbw);
 
 	return MGW_OUTPUT_SUCCESS;
 }
@@ -307,14 +320,21 @@ static void *connect_and_send_thread(void *arg)
 			continue;
 		}
 
+		// int64_t ts_gap = packet.pts / 1000 - stream->last_dts;
+		// if (stream->last_dts && ts_gap > 200) {
+		// 	tlog(TLOG_ERROR, "srt stream packet pts too big!, last:%lld us, cur:%lld us, gap:%lld ms\n",
+		// 				stream->last_dts, packet.pts, ts_gap);
+		// }
+
 		if ((ret = stream->mpegts_info->send_packet(stream->mpegts, &packet)) < 0) {
 			usleep(5*1000);
 			continue;
 		}
-		// blog(MGW_LOG_INFO, "Send a packet data to mpegts success! size:%d", packet.size);
+		stream->last_dts = packet.pts / 1000;
+
 		stream->total_sent_frames++;
 
-		if ((stream->total_sent_frames % 4) == 0)
+		if ((stream->total_sent_frames % 6) == 0)
 			usleep(10*1000);
 	}
 
@@ -325,16 +345,19 @@ static void *connect_and_send_thread(void *arg)
 		blog(MGW_LOG_INFO, "User stopped the stream");
 	}
 
+error:
 	stream->output->last_error_status = stream->last_error_code;
 	mgw_libsrt_close(&stream->srt_context);
+	/**< reconect srt need to recreate mpegts, here destroy it */
 	stream->mpegts_info->stop(stream->mpegts);
+	stream->mpegts_info->destroy(stream->mpegts);
+	stream->mpegts = NULL;
 
-error:
 	/**< Not User stop the stream, must detach the send thread and exit automatically */
 	if (!stopping(stream)) {
 		pthread_detach(stream->send_thread);
+		blog(MGW_LOG_INFO, "srt stream signal stop!");
 		stream->output->signal_stop(stream->output, ret);
-        blog(MGW_LOG_INFO, "srt stream signal stop!");
 	}
 	os_event_reset(stream->stop_event);
 	os_atomic_set_bool(&stream->active, false);
@@ -363,8 +386,14 @@ static void srt_stream_stop(void *data)
 
 	if (active(stream))
 		os_event_signal(stream->stop_event);
-	else
+	else {
+		tlog(TLOG_INFO, "srt stream stop signal stop, ret:%d\n", MGW_OUTPUT_SUCCESS);
 		stream->output->signal_stop(stream->output, MGW_OUTPUT_SUCCESS);
+	}
+
+	stream->last_dts = 0;
+	stream->left_size = 0;
+
 }
 
 static uint64_t srt_stream_get_total_bytes(void *data)
@@ -391,14 +420,25 @@ static mgw_data_t *srt_stream_get_settings(void *data)
 	return mgw_data_newref(stream->settings);
 }
 
+/**< only accept the maxbw, payload size to update*/
 static void srt_stream_apply_update(void *data, mgw_data_t *settings)
 {
 	struct srt_stream *stream = data;
 	if (!stream || settings)
 		return;
 
-	mgw_data_release(stream->settings);
-	stream->settings = settings;
+	int maxbw = mgw_data_get_int(settings, "maxbw");
+	int payloadsize = mgw_data_get_int(settings, "payloadsize");
+
+	if (maxbw > 20) {
+		mgw_libsrt_set_maxbw(stream->srt_context, maxbw);
+		mgw_data_set_int(stream->settings, "maxbw", maxbw);
+	}
+
+	if (payloadsize > 188) {
+		mgw_libsrt_set_payload_size(stream->srt_context, payloadsize);
+		mgw_data_set_int(stream->settings, "payloadsize", payloadsize);
+	}
 }
 
 struct mgw_output_info srt_output_info = {

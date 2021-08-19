@@ -1,8 +1,8 @@
 export PROJECT_ROOT_PATH := $(shell pwd)
-export PLATFORM := arm-hisiv600-linux-
+# export PLATFORM := arm-hisiv600-linux-
 #$(info $(PROJECT_ROOT_PATH))
 
-all: core plugin app
+all: core plugin msg app
 
 core:
 	$(MAKE)	-C	mgw-core
@@ -40,7 +40,7 @@ test_install:
 	$(MAKE) -C	test
 
 .PHONY: clean
-clean: core_clean plugin_clean app_clean
+clean: core_clean plugin_clean msg_clean app_clean
 
 .PHONY: install
-install: core_install plugin_install app_install
+install: core_install plugin_install msg_install app_install

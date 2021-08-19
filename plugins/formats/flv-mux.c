@@ -66,9 +66,9 @@ static bool build_flv_meta_data(mgw_data_t *settings,
 #ifdef SEND_AUDIO
 	long long channels = mgw_data_get_int(settings, "channels");
 	enc_str_val(&enc, end, "audiocodecid",      "mp4a");
-	enc_num_val(&enc, end, "audiodatarate",     mgw_data_get_int(settings, "abps") * 1000);  //kbps
-    enc_num_val(&enc, end, "audiosamplerate",   mgw_data_get_int(settings, "sample_rate"));
-	enc_num_val(&enc, end, "audiosamplesize",   mgw_data_get_int(settings, "sample_size"));
+	enc_num_val(&enc, end, "audiodatarate",     mgw_data_get_int(settings, "abps"));  //kbps
+    enc_num_val(&enc, end, "audiosamplerate",   mgw_data_get_int(settings, "samplerate"));
+	enc_num_val(&enc, end, "audiosamplesize",   mgw_data_get_int(settings, "samplesize"));
     enc_num_val(&enc, end, "audiochannels",     channels);
 	if(SPEAKERS_MONO == channels)
     	enc_bool_val(&enc, end, "stereo", false);

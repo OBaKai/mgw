@@ -46,16 +46,15 @@ static const char *get_git_sha1(void)
 static char *make_version_str(uint8_t major, uint8_t minor, \
                 uint16_t patch, bool with_time, bool with_sha1)
 {
-	char *version = bzalloc(64);
+	char *version = bzalloc(128);
 
-	snprintf(version, 64, "%d.%d.%d", major, minor, patch);
+	snprintf(version, 128, "%d.%d.%d", major, minor, patch);
 
 	if (with_time) {
 		char *time_str = get_localtime_str();
 		if (time_str) {
 			strcat(version, "_");
 			strncat(version, time_str, 32);
-			bfree(time_str);
 		}
 	}
 
@@ -73,13 +72,24 @@ uint32_t mgw_get_version(void)
 						LIBMGW_API_PATCH_VER);
 }
 
+const char *mgw_get_type(void)
+{
+	return mgw ? mgw_data_get_string(mgw->data.private_data, "type") : NULL;
+}
+
+const char *mgw_get_sn(void)
+{
+	return mgw ? mgw_data_get_string(mgw->data.private_data, "sn") : NULL;
+}
+
 const char *mgw_get_version_string(void)
 {
-	static char mgw_ver[64] = {};
+	static char mgw_ver[128] = {};
+	memset(mgw_ver, 0, sizeof(mgw_ver));
 	char *ver = make_version_str(LIBMGW_API_MAJOR_VER, LIBMGW_API_MINOR_VER,\
-					LIBMGW_API_PATCH_VER, true, true);
+					LIBMGW_API_PATCH_VER, false, false);
 	if (ver) {
-		strncpy(mgw_ver, ver, sizeof(mgw_ver));
+		strncpy(mgw_ver, ver, sizeof(mgw_ver) - 1);
 		bfree(ver);
 	}
 	return mgw_ver;
@@ -298,7 +308,7 @@ static inline bool mgw_context_data_init_wrap(
 	if (!context->procs)
 		return false;
     */
-
+    context->id			 = bstrdup(mgw_data_get_string(settings, "id"));
 	context->name        = dup_name(name, is_private);
 	context->settings    = mgw_data_newref(settings);
 	return true;
@@ -329,6 +339,7 @@ void mgw_context_data_free(struct mgw_context_data *context)
 	mgw_context_data_remove(context);
 	pthread_mutex_destroy(&context->rename_cache_mutex);
 	bfree(context->name);
+	bfree(context->id);
 
 	for (size_t i = 0; i < context->rename_cache.num; i++)
 		bfree(context->rename_cache.array[i]);

@@ -249,7 +249,7 @@ static void *mpegts_create(mgw_data_t *settings, int flags,
 		// avformat_alloc_output_context2(&ts->fmt_ctx, NULL, "mpeg", "1.mpg");
 		goto error;
 	}
-	snprintf(ts->fmt_ctx->filename, sizeof(ts->fmt_ctx->filename), "%s", ts->dst_file.array);
+	//snprintf(ts->fmt_ctx->filename, sizeof(ts->fmt_ctx->filename), "%s", ts->dst_file.array);
 
 	if ((ts->flags & MGW_FORMAT_NO_FILE) && write_packet) {
 		// const char *filename = outputformat;
@@ -330,13 +330,12 @@ static size_t mpegts_send_packet(void *data, struct encoder_packet *packet)
 	if (packet->keyframe && packet->type == ENCODER_VIDEO)
 		snd_packet.flags |= AV_PKT_FLAG_KEY;
 
-	if (packet->type == ENCODER_VIDEO) {
-		snd_packet.stream_index = ts->video_stream->index;
+	if (packet->type == ENCODER_VIDEO)
 		stream = ts->video_stream;
-	} else if (packet->type == ENCODER_AUDIO) {
-		snd_packet.stream_index = ts->audio_stream->index;
+	else if (packet->type == ENCODER_AUDIO)
 		stream = ts->audio_stream;
-	}
+
+	snd_packet.stream_index = stream->index;
 	packet->pts /= 1000;
 	snd_packet.data = packet->data;
 	snd_packet.size = packet->size;
@@ -345,10 +344,14 @@ static size_t mpegts_send_packet(void *data, struct encoder_packet *packet)
 		ts->start_dts_offset = packet->pts;
 
 	snd_packet.pts = snd_packet.dts = packet->pts - ts->start_dts_offset;
-	if (snd_packet.dts == ts->last_dts && ts->last_dts) {
+	if (snd_packet.dts == ts->last_dts && ts->last_dts){
 		ts->last_dts = snd_packet.dts;
 		snd_packet.dts++;
+		snd_packet.pts++;
+	} else {
+		ts->last_dts = snd_packet.dts;
 	}
+
 	av_packet_rescale_ts(&snd_packet, time_base, stream->time_base);
 
 	// blog(MGW_LOG_INFO, "packet index:%d data[0]:%02x,data[1]:%02x,data[2]:%02x,data[3]:%02x,data[4]:%02x",

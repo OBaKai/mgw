@@ -8,7 +8,9 @@
 #include "mgw.h"
 
 #include "util/base.h"
+#include "util/tlog.h"
 #include "buffer/ring-buffer.h"
+#include "mgw-basic.h"
 
 #define MGW_OUTPUT_RETRY_SEC	2
 #define MGW_OUTPUT_RETRY_MAX	20
@@ -32,6 +34,11 @@ static inline bool stopping(const struct mgw_output *output)
     return os_event_try(output->stopping_event) == EAGAIN;
 }
 
+static inline bool actived(const struct mgw_output *output)
+{
+	return os_atomic_load_bool(&output->actived);
+}
+
 const struct mgw_output_info *find_output(const char *id)
 {
 	size_t i;
@@ -49,7 +56,8 @@ static bool mgw_output_actual_start(mgw_output_t *output)
 	output->stop_code = 0;
 
 	if (output->valid && output->context.data)
-		success = output->info.start(output->context.data);
+		if ((success = output->info.start(output->context.data)))
+			mgw_stream_signal_connected_internal(output->cb_data, output->context.id);
 
 	os_atomic_set_bool(&output->actived, success);
 	return success;
@@ -69,7 +77,7 @@ static void mgw_output_actual_stop(mgw_output_t *output, bool force)
 
     os_event_signal(output->stopping_event);
 	if (force && output->context.data) {
-        blog(MGW_LOG_INFO, "------------>>> will call info.stop  ");
+        blog(MGW_LOG_INFO, "will call info.stop  ");
 		output->info.stop(output->context.data);
 	} else if (reconnecting(output)) {
 		output->stop_code = MGW_OUTPUT_SUCCESS;
@@ -83,6 +91,7 @@ static void *reconnect_thread(void *param)
 	unsigned long ms = output->reconnect_retry_cur_sec * 1000;
 
 	output->reconnect_thread_active = true;
+	mgw_stream_signal_reconnecting_internal(output->cb_data, output->context.id);
 
 	if (os_event_timedwait(output->reconnect_stop_event, ms) == ETIMEDOUT)
 		mgw_output_actual_start(output);
@@ -93,6 +102,18 @@ static void *reconnect_thread(void *param)
 		os_atomic_set_bool(&output->reconnecting, false);
 
 	output->reconnect_thread_active = false;
+	return NULL;
+}
+
+static void *stop_thread(void *arg)
+{
+	mgw_output_t *output = arg;
+	if (!output || stopping(output))
+		return NULL;
+
+	tlog(TLOG_INFO, "stop output:%s internal!\n", output->context.id);
+	mgw_stream_signal_stop_output_internal(output->cb_data, output->context.id);
+
 	return NULL;
 }
 
@@ -110,6 +131,9 @@ static void output_reconnect(struct mgw_output *output)
 	if (output->reconnect_retries >= output->reconnect_retry_max) {
 		output->stop_code = MGW_OUTPUT_DISCONNECTED;
 		os_atomic_set_bool(&output->reconnecting, false);
+		if (0 == pthread_create(&output->stop_thread, NULL, stop_thread, output)) {
+			pthread_detach(output->stop_thread);
+		}
 		return;
 	}
 
@@ -132,12 +156,12 @@ static void output_reconnect(struct mgw_output *output)
 	ret = pthread_create(&output->reconnect_thread, NULL, &reconnect_thread,
 			     output);
 	if (ret < 0) {
-		blog(MGW_LOG_WARNING, "Failed to create reconnect thread");
+		tlog(TLOG_WARN, "Failed to create reconnect thread");
 		os_atomic_set_bool(&output->reconnecting, false);
 	} else {
-		blog(MGW_LOG_INFO, "Output '%s':  Reconnecting in %d seconds..",
-		     output->context.name, output->reconnect_retry_sec);
-
+		tlog(TLOG_INFO, "Output '%s':  Reconnecting in %d seconds..",
+							output->context.id, output->reconnect_retry_sec);
+		const char *name = output->context.name;
 		//signal_reconnect(output);
 	}
 }
@@ -159,12 +183,20 @@ static void mgw_output_signal_stop(mgw_output_t *output, int code)
 		return;
 
 	output->stop_code = code;
+	if (!output->reconnect_retries && code != MGW_OUTPUT_DISCONNECTED)
+		output->last_error_status = code;
+
 	if (can_reconnect(output, code)) {
 		output_reconnect(output);
 	} else {
-		os_atomic_set_bool(&output->actived, false);
+		if (!reconnecting(output) && actived(output)) {
+			if (0 == pthread_create(&output->stop_thread, NULL, stop_thread, output)) {
+				pthread_detach(output->stop_thread);
+			}
+		}
         os_event_signal(output->stopping_event);
-        blog(MGW_LOG_INFO, "------------------>> signal stop output");
+		os_atomic_set_bool(&output->actived, false);
+        blog(MGW_LOG_INFO, "signal stop output");
 	}
 }
 
@@ -208,8 +240,8 @@ static int mgw_output_get_next_encoder_packet(
 	return mgw_rb_read_packet(output->buffer, packet);
 }
 
-mgw_output_t *mgw_output_create(const char *id,
-                const char *name, mgw_data_t *settings)
+mgw_output_t *mgw_output_create(const char *id, const char *name,
+							mgw_data_t *settings, void *cb_data)
 {
 	struct mgw_output *output = bzalloc(sizeof(struct mgw_output));
 	const struct mgw_output_info *info = find_output(id);
@@ -279,6 +311,8 @@ mgw_output_t *mgw_output_create(const char *id,
 	output->get_audio_header = mgw_output_get_audio_header;
 	output->get_next_encoder_packet = mgw_output_get_next_encoder_packet;
 
+	output->cb_data = cb_data;
+
 	if (info)
 		output->context.data =
 			info->create(output->context.settings, output);
@@ -297,16 +331,15 @@ void mgw_output_destroy(struct mgw_output *output)
 	if (!output)
 		return;
 
-	blog(MGW_LOG_DEBUG, "Output %s destroyed!", output->context.name);
+	tlog(TLOG_INFO, "Output %s destroyed!", output->context.name);
 
 	if (output->valid && mgw_output_active(output))
 		mgw_output_actual_stop(output, true);
 
 	os_event_wait(output->stopping_event);
-	if (output->context.data) {
-        blog(MGW_LOG_INFO, "----------->> call '%s' stream destroy", output->info.id);
+	if (output->context.data)
         output->info.destroy(output->context.data);
-    }
+
 	/** Destroy buffer */
 	if (output->buffer)
 		mgw_rb_destroy(output->buffer);
@@ -320,7 +353,7 @@ void mgw_output_destroy(struct mgw_output *output)
 	if (output->private_output)
 		bfree((void*)output->info.id);
 
-	blog(MGW_LOG_INFO, "-------------->> free output!\n");
+	blog(MGW_LOG_INFO, "free output!\n");
 	bfree(output);
 }
 
@@ -340,7 +373,7 @@ void mgw_output_release(mgw_output_t *output)
 
 	if (!output)
 		return;
-	
+
 	mgw_weak_output_t *ctrl = output->control;
 	if (mgw_ref_release(&ctrl->ref)) {
 		mgw_output_destroy(output);

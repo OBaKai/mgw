@@ -5,6 +5,7 @@
 #include "util/dstr.h"
 #include "util/threading.h"
 #include "util/base.h"
+#include "util/tlog.h"
 
 /** Set ring buffer to 10M Bytes by default */
 #define RING_BUFFER_SIZE_DEF        10*1024*1024
@@ -157,10 +158,13 @@ size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet)
 
     frame_t frame_type;
     if (ENCODER_VIDEO == packet->type) {
-        if (packet->keyframe)
-            frame_type = FRAME_I;
-        else
-            frame_type = FRAME_P;
+        frame_type = packet->keyframe ? FRAME_I : FRAME_P;
+
+		if ((packet->data[0] || packet->data[1] ||
+			(packet->data[3] != 1 && packet->data[4] != 1)))
+			tlog(TLOG_INFO, "Ring buffer find a video frame "
+						"data[0]:%02x, data[1]:%02x, data[2]:%02x, data[3]:%02x, data[3]:%02x",
+						packet->data[0], packet->data[1], packet->data[2],packet->data[3],packet->data[4]);
     } else if (ENCODER_AUDIO == packet->type) {
         frame_type = FRAME_AAC;
     }

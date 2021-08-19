@@ -17,18 +17,19 @@ CXX := $(PLATFORM)g++
 # define more attribute
 ifeq ($(TARGET_TYPE),"shared")
 	CFLAGS += -fPIC
+	CXXFLAGS += -fPIC
 endif
 
 ifeq ($(DEBUG),"yes")
 	BUILD := debug
 	MACRO += DEBUG
 	CFLAGS += -g -Wall -rdynamic -funwind-tables
-	CXXFLAGS += $(CFLAGS)
+	CXXFLAGS += -g -Wall -rdynamic -funwind-tables
 else
 	BUILD := release
 	MACRO += NDEBUG
 	CFLAGS := -Wall -O2
-	CXXFLAGS += $(CFLAGS)
+	CXXFLAGS += -Wall -O2
 endif
 
 CFLAGS += $(PLATFORM_FLAGS) -std=gnu99
@@ -48,7 +49,7 @@ OUTPATH += $(BUILD)
 $(shell mkdir -p $(OUTPATH) > /dev/null)
 
 SOURCE_FILES = $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.cpp))
-SOURCE_FILES = $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.cc))
+SOURCE_FILES += $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.cc))
 SOURCE_FILES += $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.c))
 
 OBJECT_FILES = $(patsubst %.c,%.o,$(patsubst %.cc,%.o,$(patsubst %.cpp,%.o,$(SOURCE_FILES))))
@@ -60,11 +61,11 @@ DEPFLAGS = -MMD -MP -MF $(OUTPATH)/$(*F).d
 #------------------------Rules Settings -----------------------------
 $(OUTPATH)/$(TARGET): $(OBJECT_FILES) 
 ifeq ($(TARGET_TYPE), "app")
-	@-echo $(OBJECT_FILES)
-	$(CXX) -o $@ -Wl,-rpath . $(CFLAGS) $^ $(LDFLAGS) $(LIBS)
+	@-echo $(OBJECT_FILES) $(SOURCE_FILES)
+	$(CXX) -o $@ -Wl,-rpath . $^ $(LDFLAGS) $(LIBS)
 else
 ifeq ($(TARGET_TYPE), "shared")
-	@-echo $(OBJECT_FILES)
+	@-echo $(OBJECT_FILES) $(SOURCE_FILES)
 	$(CC) -o $@ -shared -fPIC -rdynamic -Wl,-rpath . $^ $(LDFLAGS) $(LIBS)
 else
 ifeq ($(OUTTYPE),"static")

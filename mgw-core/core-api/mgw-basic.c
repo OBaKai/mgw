@@ -9,6 +9,7 @@
 #include "mgw.h"
 
 #include "util/base.h"
+#include "util/tlog.h"
 #include "util/darray.h"
 
 #include <string.h>
@@ -24,6 +25,8 @@ struct mgw_stream {
 	mgw_source_t				*source;
 	DARRAY(struct mgw_output *)	outputs;
 	mgw_data_t					*settings;
+
+	stream_cb					cb;
 };
 
 /** The configuration should not include source and output, just descrip mgw system settings */
@@ -42,11 +45,13 @@ void mgw_app_exit(void)
 }
 
 /** basic functions */
-void *mgw_stream_create(const char *name)
+void *mgw_stream_create(const char *name, stream_cb cb)
 {
 	struct mgw_stream *stream = bzalloc(sizeof(struct mgw_stream));
 	stream->settings = mgw_data_create();
 	mgw_data_set_string(stream->settings, "name", name);
+	stream->cb = cb;
+
 	return stream;
 }
 
@@ -163,17 +168,20 @@ static const char *get_output_id(const char *protocol)
 		return NULL;
 }
 
-bool mgw_stream_add_ouptut(void *data, mgw_data_t *settings)
+int mgw_stream_add_ouptut(void *data, mgw_data_t *settings)
 {
 	const char *name = NULL, *id = NULL, *old_id = NULL;
 	const char *protocol = NULL;
 	struct mgw_output *output = NULL;
 	struct mgw_stream *stream = data;
+	bool success = false;
 
 	if (!stream || !settings)
-		return false;
+		return -1;
 
+	/**< Name is the stream name */
 	name = mgw_data_get_string(stream->settings, "name");
+	/**< Unique id to recognize the output channel */
 	id = mgw_data_get_string(settings, "id");
 	protocol = mgw_data_get_string(settings, "protocol");
 
@@ -181,21 +189,24 @@ bool mgw_stream_add_ouptut(void *data, mgw_data_t *settings)
 		struct mgw_output **out = stream->outputs.array + i;
 		old_id = mgw_data_get_string((*out)->context.settings, "id");
 		if (!strcmp(id, old_id))
-			return false;
+			return -1;
 	}
 
-	output = mgw_output_create(get_output_id(protocol), name, settings);
+	output = mgw_output_create(get_output_id(protocol), name, settings, stream);
 	if (!output) {
 		blog(MGW_LOG_ERROR, "Tried to create output failed!");
-		return false;
+		return -1;
 	}
 
-	if (!mgw_output_start(output))
-		blog(MGW_LOG_INFO, "Tried to start output:%s failed, try again!", id);
+	if (!(success = mgw_output_start(output))) {
+		int result = output->last_error_status;
+		tlog(TLOG_INFO, "Tried to start output:%s failed, code:%d, try again!", id, result);
+		mgw_output_destroy(output);
+		return result;
+	}
 
 	da_push_back(stream->outputs, &output);
-
-	blog(MGW_LOG_INFO, "----------->> add output success, outputs.num:%ld", stream->outputs.num);
+	blog(MGW_LOG_INFO, "add output success, outputs.num:%ld", stream->outputs.num);
 
 	if (mgw_data_has_user_value(stream->settings, "outputs")) {
 		mgw_data_array_t *outputs = mgw_data_get_array(stream->settings, "outputs");
@@ -220,7 +231,7 @@ bool mgw_stream_add_ouptut(void *data, mgw_data_t *settings)
 		mgw_data_array_release(outputs);
 	}
 
-	return true;
+	return 0;
 }
 
 bool mgw_stream_add_private_output(void *data, mgw_data_t *settings)
@@ -241,7 +252,7 @@ void mgw_stream_release_output(void *data, const char *id)
 			mgw_output_stop((*output));
 			mgw_output_release((*output));
 			da_erase_item(stream->outputs, output);
-			blog(MGW_LOG_INFO, "---------->>> stop and release: %s success, output.num:%ld",
+			tlog(TLOG_INFO, "stop and release: %s success, output.num:%ld",
 							exist_id, stream->outputs.num);
 
 			mgw_data_array_t *outputs = mgw_data_get_array(stream->settings, "outputs");
@@ -252,7 +263,7 @@ void mgw_stream_release_output(void *data, const char *id)
 				if (!strcmp(id, exist_id)) {
 					mgw_data_array_erase(outputs, i);
 					mgw_data_release(out_settings);
-					blog(MGW_LOG_INFO, "----------->> erase output:%s", id);
+					blog(MGW_LOG_INFO, "erase output:%s", id);
 					break;
 				}
 				mgw_data_release(out_settings);
@@ -261,6 +272,38 @@ void mgw_stream_release_output(void *data, const char *id)
 			break;
 		}
 	}
+}
+
+bool mgw_stream_has_output(void *data)
+{
+	struct mgw_stream *stream = data;
+	if (!stream)
+		return NULL;
+
+	return stream->outputs.num > 0;
+}
+
+static inline void signal_output_status(struct mgw_stream *stream, char *id, int status)
+{
+	stream->cb(status, id, strlen(id));
+}
+
+void mgw_stream_signal_stop_output_internal(void *data, char *output_id)
+{
+	if (data && output_id)
+		signal_output_status((struct mgw_stream*)data, output_id, STREAM_OUTPUT_STOP);
+}
+
+void mgw_stream_signal_reconnecting_internal(void *data, char *output_id)
+{
+	if (data && output_id)
+		signal_output_status((struct mgw_stream*)data, output_id, STREAM_OUTPUT_RECONNECTING);
+}
+
+void mgw_stream_signal_connected_internal(void *data, char *output_id)
+{
+	if (data && output_id)
+		signal_output_status((struct mgw_stream*)data, output_id, STREAM_OUTPUT_CONNECTED);
 }
 
 /** ---------------------------------------------- */
@@ -277,6 +320,24 @@ mgw_data_t *mgw_stream_get_info(void *data, const char *output_id)
 		const char *exist_id = mgw_data_get_string((*output)->context.settings, "id");
 		if (!strcmp(exist_id, output_id)) {
 			output_settings = mgw_output_get_state((*output));
+			break;
+		}
+	}
+	return output_settings;
+}
+
+mgw_data_t *mgw_stream_get_output_setting(void *data, const char *id)
+{
+	struct mgw_stream *stream = data;
+	if (!data || !id)
+		return NULL;
+
+	mgw_data_t *output_settings = NULL;
+	for (int i = 0; i < stream->outputs.num; i++) {
+		struct mgw_output **output = stream->outputs.array + i;
+		const char *exist_id = mgw_data_get_string((*output)->context.settings, "id");
+		if (!strcmp(exist_id, id)) {
+			output_settings = mgw_data_newref((*output)->context.settings);
 			break;
 		}
 	}

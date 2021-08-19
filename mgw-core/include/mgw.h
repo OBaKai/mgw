@@ -1,8 +1,3 @@
-/**
- * 这个文件包含所有功能接口，提供给外部调用
- * 
-*/
-
 #ifndef _MGW_CORE_MGW_H_
 #define _MGW_CORE_MGW_H_
 
@@ -23,6 +18,8 @@ bool mgw_initialized(void);
 
 uint32_t mgw_get_version(void);
 const char *mgw_get_version_string(void);
+const char *mgw_get_type(void);
+const char *mgw_get_sn(void);
 
 /**
  * load all module automatically
@@ -109,8 +106,8 @@ void mgw_source_set_audio_extra_data(mgw_source_t *source,
  * Output operations
  **********************************/
 
-mgw_output_t *mgw_output_create(const char *id,
-				const char *name, mgw_data_t *settings);
+mgw_output_t *mgw_output_create(const char *id, const char *name,
+					mgw_data_t *settings, void *cb_data);
 
 /**
  * Adds/releases a reference to an output.  When the last reference is

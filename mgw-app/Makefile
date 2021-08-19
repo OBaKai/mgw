@@ -6,6 +6,8 @@ INC_DIR = . \
 		  ../plugins \
 		  ../plugins/outputs \
 		  ../plugins/sources \
+		  ../message \
+		  ../deps/include
 
 LIB_DIR = . \
 		  ../mgw-core/core-api/debug \
@@ -15,14 +17,15 @@ LIB_DIR = . \
 		  ../plugins/sources/debug \
 		  ../plugins/formats/debug \
 		  ../plugins/thirdparty/debug \
+		  ../message/debug
 
 ifeq ($(strip $(PLATFORM)),)
 LIB_DIR += ../deps/lib/x86
 
-LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats -lmgw-thirdparty \
+LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats -lmgw-message -lmgw-thirdparty \
 -lmgw-buffer -lmgw-util -lavformat -lavcodec -lavfilter -lavutil -lswscale -lpostproc \
 -lswresample -lavdevice -lrtmp -lsrt -lx264 -lx265 -lfdk-aac \
--lssl -lcrypto -lz -ljansson -lrt \
+-lcurl -lwebsockets -lssl -lcrypto -lz -ljansson -lrt \
 -lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto
 
 else

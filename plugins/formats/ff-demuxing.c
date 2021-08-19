@@ -11,8 +11,24 @@
 #include "util/base.h"
 #include "util/threading.h"
 
+#include "libavutil/avstring.h"
+#include "libavutil/eval.h"
+#include "libavutil/mathematics.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/dict.h"
+#include "libavutil/parseutils.h"
+#include "libavutil/samplefmt.h"
+#include "libavutil/avassert.h"
+#include "libavutil/time.h"
+#include "libavutil/bprint.h"
+#include "libavutil/log.h"
 #include "libavformat/avformat.h"
+#include "libavdevice/avdevice.h"
 #include "libswscale/swscale.h"
+#include "libavutil/opt.h"
+#include "libavcodec/avfft.h"
+#include "libswresample/swresample.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -21,6 +37,7 @@ struct ff_demux {
 	struct dstr			src_file;
 
 	AVFormatContext		*fmt;
+	AVInputFormat		*ifmt;
 	AVStream			*video;
 	AVStream			*audio;
 	AVPacket			pkt;
@@ -58,34 +75,37 @@ void *ff_demux_create(const char *url, bool save_file)
     int ret = 0;
     if (!url)
         return NULL;
+	AVFormatContext *fmtctx = NULL;
+	av_log_set_level(AV_LOG_TRACE);
+	avdevice_register_all();
+	avformat_network_init();
 
 	struct ff_demux *demux = bzalloc(sizeof(struct ff_demux));
 	dstr_copy(&demux->src_file, url);
 	os_event_init(&demux->demux_stopping, OS_EVENT_TYPE_MANUAL);
 	os_sem_init(&demux->demux_sem, 0);
 
-	// FILE *src_file = fopen(url, "r");
-	// if (!src_file) {
-	// 	blog(MGW_LOG_ERROR, "counldn't open the file %s", url);
-	// }
-
-	if ((ret = avformat_open_input(&demux->fmt, url, NULL, NULL)) < 0) {
+	fmtctx = avformat_alloc_context();
+	if ((ret = avformat_open_input(&fmtctx, url, NULL, NULL)) < 0) {
 		blog(MGW_LOG_ERROR, "Tried to open input:%s failed, error:%s", url, av_err2str(ret));
 		goto error;
 	}
 
-	if (avformat_find_stream_info(demux->fmt, NULL) < 0) {
+	if (avformat_find_stream_info(fmtctx, NULL) < 0) {
 		blog(MGW_LOG_ERROR, "Tried to find stream info failed!");
 		goto error;
 	}
-
-	if ((ret = av_find_best_stream(demux->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0) {
+	av_dump_format(fmtctx, 0, url, 0);
+	// demux->fmt = fmtctx;
+	if ((ret = av_find_best_stream(fmtctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0) {
 		blog(MGW_LOG_INFO, "Couldn't found video stream!");
 	} else {
 		demux->video_index = ret;
 		demux->video = demux->fmt->streams[ret];
 		if (!demux->h264_file && save_file)
 			demux->h264_file = fopen("ff_demux_test.h264", "wb");
+		blog(MGW_LOG_INFO, "video width:%d, height:%d\n",
+				demux->video->codecpar->width, demux->video->codecpar->height);
 	}
 
 	if ((ret = av_find_best_stream(demux->fmt, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0)) < 0) {
@@ -97,7 +117,6 @@ void *ff_demux_create(const char *url, bool save_file)
 			demux->aac_file = fopen("ff_demux_test.aac", "wb");
 	}
 
-	
 	/** Save video and audio to file must be initialize filter and open file*/
 	const AVBitStreamFilter *h264_filter = av_bsf_get_by_name("h264_mp4toannexb");
 	if (av_bsf_alloc(h264_filter, &demux->video_filter_ctx) < 0) {
@@ -109,8 +128,8 @@ void *ff_demux_create(const char *url, bool save_file)
 	} else {
 		AVCodecParameters *codecpar = NULL;
 		codecpar = demux->fmt->streams[demux->video_index]->codecpar;
-		// if (codecpar)
-		// 	avcodec_parameters_copy(demux->video_filter_ctx->par_in, codecpar);
+		if (codecpar)
+			avcodec_parameters_copy(demux->video_filter_ctx->par_in, codecpar);
 
 		av_bsf_init(demux->video_filter_ctx);
 	}

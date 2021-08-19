@@ -4,6 +4,7 @@ INC_DIR = ./ \
 		  ../deps/include \
 		  ../mgw-core \
 		  ../mgw-core/include \
+		  ../plugins \
 
 TARGET = libmgw-message.so
 TARGET_TYPE = "shared"

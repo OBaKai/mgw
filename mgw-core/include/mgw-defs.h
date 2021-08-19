@@ -29,7 +29,7 @@
 #define MODULE_MISSING_EXPORTS    -3
 #define MODULE_INCOMPATIBLE_VER   -4
 
-/**< For mgw internal */
+/**< Output stream result for mgw internal */
 #define MGW_OUTPUT_SUCCESS         0
 #define MGW_OUTPUT_BAD_PATH       -1
 #define MGW_OUTPUT_CONNECT_FAILED -2
@@ -39,12 +39,32 @@
 #define MGW_OUTPUT_UNSUPPORTED    -6
 #define MGW_OUTPUT_NO_SPACE       -7
 
-/**< For caller */
+/**< Output stream status for user */
 #define MGW_OUTPUT_STOPED			0
 #define MGW_OUTPUT_CONNECTING		1
 #define MGW_OUTPUT_RECONNECTING		2
 #define MGW_OUTPUT_CONNECTFAILED	3
 #define MGW_OUTPUT_STREAMING		4
+
+/**< For user, those field must be set to 
+ *   mgw_data_t for settings to start a stream output
+ * */
+#define	MGW_OUTPUT_FIELD_CHANNEL	"channel"
+#define MGW_OUTPUT_FIELD_ID			"id"
+#define MGW_OUTPUT_FIELD_PROTOCOL	"channel"
+#define MGW_OUTPUT_FIELD_PATH		"path"
+#define MGW_OUTPUT_FIELD_KEY		"key"
+/** If inneed */
+#define MGW_OUTPUT_FIELD_USERNAME	"username"
+#define MGW_OUTPUT_FIELD_PASSWORD	"password"
+#define MGW_OUTPUT_FIELD_DEST_IP	"dest_ip"	//The IP of stream address
+#define MGW_OUTPUT_FIELD_NETIF_TYPE	"netif_type"
+#define MGW_OUTPUT_FIELD_NETIF_NAME	"netif_name"
+
+/** netif type */
+#define MGW_OUTPUT_NETTYPE_IP		"ip"
+#define MGW_OUTPUT_NETTYPE_NETCARD	"net_card"
+
 
 enum mgw_obj_type {
 	MGW_OBJ_TYPE_INVALID,

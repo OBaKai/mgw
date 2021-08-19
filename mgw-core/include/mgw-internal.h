@@ -40,6 +40,7 @@ typedef struct mgw_module mgw_module_t;
 /* mgw shared context data */
 struct mgw_context_data {
 	char *name;
+	char *id;
     /** Store info implement */
 	void *data;
 	mgw_data_t *settings;
@@ -220,6 +221,8 @@ struct mgw_output {
 	os_event_t					*stopping_event;
 	void						*buffer;
 	volatile long				failed_count;
+	pthread_t					stop_thread;
+	void						*cb_data;
 
 	int			last_error_status;
 

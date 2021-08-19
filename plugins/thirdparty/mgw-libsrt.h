@@ -34,6 +34,9 @@ int mgw_libsrt_get_file_handle(void *priv_data);
 int mgw_libsrt_get_payload_size(void *priv_data);
 void mgw_libsrt_set_payload_size(void *priv_data, int size);
 
+int64_t mgw_libsrt_get_maxbw(void *priv_data);
+void mgw_libsrt_set_maxbw(void *priv_data, int64_t size);
+
 #ifdef __cplusplus
 }
 #endif

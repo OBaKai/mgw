@@ -774,6 +774,7 @@ void *mgw_libsrt_create(srt_int_cb *int_cb, const char *filename, enum srt_mode 
 	s->messageapi = -1;
 	s->transtype = SRTT_LIVE;
 	s->linger = -1;
+	// s->tsbpd = 1;
 
 	dstr_copy(&s->filename, filename);
 
@@ -799,6 +800,23 @@ int mgw_libsrt_get_payload_size(void *priv_data)
 
 void mgw_libsrt_set_payload_size(void *priv_data, int size)
 {
+	struct srt_context *s = priv_data;
 	if (priv_data && size > 188)
-		((struct srt_context *)priv_data)->payload_size = size;
+		if (0 == libsrt_setsockopt(s->fd, SRTO_PAYLOADSIZE, \
+					"SRTO_PAYLOADSIZE", &size, sizeof(size)))
+			s->payload_size = size;
+}
+
+int64_t mgw_libsrt_get_maxbw(void *priv_data)
+{
+	return priv_data ? ((struct srt_context*)priv_data)->maxbw : 0;
+}
+
+void mgw_libsrt_set_maxbw(void *priv_data, int64_t size)
+{
+	struct srt_context *s = priv_data;
+	if (priv_data && size > 20)
+		if (0 == libsrt_setsockopt(s->fd, SRTO_MAXBW, \
+					"SRTO_MAXBW", &size, sizeof(size)))
+			s->maxbw = size;
 }

@@ -484,6 +484,13 @@ int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe,uint32_t maxfram
 		memcpy(*pframe + left, pstart_addr, len);
 	}
 
+	if (pstuFrames[rp].stuFrameInfo.frametype != FRAME_AAC && 
+			((*pframe)[0] || (*pframe)[1] ||
+			((*pframe)[3] != 1 && (*pframe)[4] != 1)))
+			_printd("stream buffer find a video frame "
+						"data[0]:%02x, data[1]:%02x, data[2]:%02x, data[3]:%02x, data[3]:%02x",
+						(*pframe)[0], (*pframe)[1], (*pframe)[2],(*pframe)[3],(*pframe)[4]);
+
 	*timestamp = pstuFrames[rp].stuFrameInfo.timestamp;
 	*frametype = pstuFrames[rp].stuFrameInfo.frametype;
     *priority  = pstuFrames[rp].stuFrameInfo.priority;

@@ -1,5 +1,5 @@
-
-#pragma once
+#ifndef _MGW_UTIL_BASE_H_
+#define _MGW_UTIL_BASE_H_
 #include <stdarg.h>
 #include "c99defs.h"
 
@@ -17,6 +17,9 @@ extern "C" {
 
 #define INT_CUR_LINE __LINE__
 #define FILE_LINE __FILE__ " (" S__LINE__ "): "
+
+// #define aligned(n)		#pragma pack(n)
+#define unaligned		__attribute__((packed))
 
 enum {
 	/**
@@ -79,4 +82,5 @@ EXPORT char *get_localtime_str(void);
 
 #ifdef __cplusplus
 }
+#endif
 #endif
