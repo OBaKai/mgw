@@ -77,10 +77,11 @@ int main(int argc, char *argv[])
     mgw_data_release(source_settings);
 
     /** start demux and send packet to source */
-	demux = ff_demux_create("/home/young/workDir/mgw/install/bin/ppp.mp4", false);
-	ff_demux_start(demux, proc_packet, stream);
+	// demux = ff_demux_create("/home/young/workDir/mgw/install/bin/ppp.mp4", false);
+	// ff_demux_start(demux, proc_packet, stream);
 
 	// demux = ff_demux_create("rtmp://192.168.0.16/live/stream0", false);
+	demux = ff_demux_create("rtsp://192.168.0.29/live/1st/living_play", false);
 
 	char code;
 	while('q' != (code = getchar()))

@@ -339,7 +339,7 @@ static int response_message(struct ws_client *client,
 			lws_callback_on_writable(client->wsi);
 			os_atomic_set_bool(&client->snd_req, true);
 			os_atomic_inc_long(&client->send_req_cnt);
-			blog(MGW_LOG_INFO, "Reponse message, req_cnt:%d", os_atomic_load_long(&client->send_req_cnt));
+			blog(MGW_LOG_INFO, "Reponse message, req_cnt:%ld", os_atomic_load_long(&client->send_req_cnt));
 		// }
 		pthread_mutex_unlock(&client->mutex);
 	}
@@ -384,7 +384,7 @@ static void receive_message(struct ws_client *client,
 				request_authorization(client);
 			} else if (AUTHEN_TYPE_RES == authen->authen_type) {
 				blog(MGW_LOG_INFO, "Server response address:%s", authen->address);
-				dstr_copy(&client->peer_address, authen->address);
+				dstr_copy(&client->peer_address, (const char *)authen->address);
 			}
 			break;
 		}
@@ -443,7 +443,7 @@ static int lws_callback(struct lws *wsi,
 					os_sem_post(client->snd_sem);
 					os_atomic_set_bool(&client->snd_req, false);
 					os_atomic_inc_long(&client->send_do_cnt);
-					blog(MGW_LOG_INFO, "Post callback sending sem connote writable, send_cnt:%d", os_atomic_load_long(&client->send_do_cnt));
+					blog(MGW_LOG_INFO, "Post callback sending sem connote writable, send_cnt:%ld", os_atomic_load_long(&client->send_do_cnt));
 				}
 			// }
 			pthread_mutex_unlock(&client->mutex);
@@ -680,7 +680,7 @@ int wsclient_send(void *data, const char *buf, size_t size)
 			lws_callback_on_writable(client->wsi);
 			os_atomic_set_bool(&client->snd_req, true);
 			os_atomic_inc_long(&client->send_req_cnt);
-			blog(MGW_LOG_INFO, "wsclient sending, req_cnt:%d", os_atomic_load_long(&client->send_req_cnt));
+			blog(MGW_LOG_INFO, "wsclient sending, req_cnt:%ld", os_atomic_load_long(&client->send_req_cnt));
 			pthread_mutex_unlock(&client->mutex);
 		}
 	}

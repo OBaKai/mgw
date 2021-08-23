@@ -278,8 +278,6 @@ mgw_output_t *mgw_output_create(const char *id, const char *name,
 	if (!mgw_context_data_init(&output->context,
 				MGW_OBJ_TYPE_OUTPUT, settings, name, false))
 		goto failed;
-	mgw_context_data_insert(&output->context, &mgw->data.outputs_mutex,
-					&mgw->data.first_output);
 
 	/** initialize buffer */
 	mgw_data_t *buf_settings = NULL;

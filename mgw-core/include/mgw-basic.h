@@ -22,28 +22,28 @@ bool mgw_app_startup(const char *config_path);
 void mgw_app_exit(void);
 
 /** basic functions */
-void *mgw_stream_create(const char *name, stream_cb cb);
-void mgw_stream_destroy(void *data);
+// void *mgw_stream_create(const char *name, stream_cb cb);
+// void mgw_stream_destroy(void *data);
 
-bool mgw_stream_add_source(void *data, mgw_data_t *settings);
-bool mgw_stream_add_private_source(void *data, mgw_data_t *settings);
-void mgw_stream_release_source(void *data);
+// bool mgw_stream_add_source(void *data, mgw_data_t *settings);
+// bool mgw_stream_add_private_source(void *data, mgw_data_t *settings);
+// void mgw_stream_release_source(void *data);
 bool mgw_stream_has_source(void *data);
 
-int mgw_stream_add_ouptut(void *data, mgw_data_t *settings);
-bool mgw_stream_add_private_output(void *data, mgw_data_t *settings);
-void mgw_stream_release_output(void *data, const char *id);
+// int mgw_stream_add_ouptut(void *data, mgw_data_t *settings);
+// bool mgw_stream_add_private_output(void *data, mgw_data_t *settings);
+// void mgw_stream_release_output(void *data, const char *id);
 bool mgw_stream_has_output(void *data);
 
-mgw_data_t *mgw_stream_get_info(void *data, const char *id);
-mgw_data_t *mgw_stream_get_output_setting(void *data, const char *id);
+// mgw_data_t *mgw_stream_get_info(void *data, const char *id);
+// mgw_data_t *mgw_stream_get_output_setting(void *data, const char *id);
 
-bool mgw_stream_send_private_packet(void *data, struct encoder_packet *packet);
+// bool mgw_stream_send_private_packet(void *data, struct encoder_packet *packet);
 
 /**< Internal signal status */
-void mgw_stream_signal_stop_output_internal(void *data, char *output_id);
-void mgw_stream_signal_reconnecting_internal(void *data, char *output_id);
-void mgw_stream_signal_connected_internal(void *data, char *output_id);
+// void mgw_stream_signal_stop_output_internal(void *data, char *output_id);
+// void mgw_stream_signal_reconnecting_internal(void *data, char *output_id);
+// void mgw_stream_signal_connected_internal(void *data, char *output_id);
 
 #ifdef __cpluplus
 }

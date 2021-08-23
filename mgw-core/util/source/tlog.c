@@ -452,7 +452,15 @@ int tlog_vext(tlog_level level, const char *file, int line, const char *func, vo
     struct tlog_info_inter info_inter;
 
     if (level < tlog_set_level) {
+#ifdef DEBUG
+        char buffer[1024] = {0};
+        int len = 0;
+        len = sprintf(buffer, "[%5s][%17s:%-4d] ", tlog_level_str[level], file, line);
+        vsprintf(buffer+len, format, ap);
+        fprintf(stdout, "%s", buffer);
+#else
         return 0;
+#endif
     }
 
     if (tlog.root == NULL) {

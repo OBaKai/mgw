@@ -55,6 +55,13 @@ struct ff_demux {
  * 9.while(av_read_frame(fmt, &pkt))
  */
 
+static int stream_interrupt(void *opaque)
+{
+	struct ff_demux *demux = opaque;
+	blog(MGW_LOG_INFO, "Received a interrupt callback from ffmpeg");
+	return 0;
+}
+
 void *ff_demux_create(const char *url, bool save_file)
 {
     int ret = 0;
@@ -69,6 +76,10 @@ void *ff_demux_create(const char *url, bool save_file)
 	os_sem_init(&demux->demux_sem, 0);
 
 	demux->fmt = avformat_alloc_context();
+	demux->fmt->interrupt_callback.callback = stream_interrupt;
+	demux->fmt->interrupt_callback.opaque = demux;
+	//set block timeout here
+
 	if ((ret = avformat_open_input(&demux->fmt, url, NULL, NULL)) < 0) {
 		blog(MGW_LOG_ERROR, "Tried to open input:%s failed, error:%s", url, av_err2str(ret));
 		goto error;

@@ -75,17 +75,12 @@ extern void mgw_context_data_setname(struct mgw_context_data *context,
 
 
 struct mgw_core_data {
-	struct mgw_source		*first_source;
-	struct mgw_output		*first_output;
-	struct mgw_format		*first_format;
-	struct mgw_service		*first_service;
-	struct mgw_device		*first_device;
+	struct mgw_service		*services_list;
+	struct mgw_stream		*pri_streams_list;
+	struct mgw_device		*devices_list;
 
-
-	pthread_mutex_t			sources_mutex;
-	pthread_mutex_t			outputs_mutex;
-	pthread_mutex_t			formats_mutex;
 	pthread_mutex_t			services_mutex;
+	pthread_mutexattr_t		pri_stream_mutex;
 	pthread_mutex_t			devices_mutex;
 
 	long long               unnamed_index;
@@ -95,13 +90,12 @@ struct mgw_core_data {
 
 struct mgw_core {
 	DARRAY(struct mgw_module)			modules;
-
     DARRAY(struct mgw_source_info)      source_types;
 	DARRAY(struct mgw_format_info)		format_types;
 	DARRAY(struct mgw_output_info)		output_types;
 	DARRAY(struct mgw_service_info)		service_types;
 
-	struct mgw_core_data		data;
+	struct mgw_core_data				data;
 };
 
 /* ------------------------------------------------------------------------- */
@@ -204,6 +198,7 @@ struct mgw_output {
 	struct mgw_context_data		context;
 	struct mgw_output_info		info;
     struct mgw_weak_output      *control;
+	struct mgw_stream			*parent_stream;
 
 	int                         reconnect_retry_sec;
 	int                         reconnect_retry_max;
@@ -259,11 +254,26 @@ struct mgw_service {
 	struct mgw_context_data		context;
 	struct mgw_service_info		info;
 	enum mgw_service_type		type;
-
-	DARRAY(struct mgw_source)	sources;
-	DARRAY(struct mgw_output)	outputs;
 };
 
+/* ----------------------------------------- */
+/* Stream */
+
+struct mgw_weak_stream {
+	struct mgw_weak_ref ref;
+	struct mgw_stream	*stream;
+};
+typedef struct mgw_weak_stream mgw_weak_stream_t;
+
+struct mgw_stream {
+	struct mgw_context_data		context;
+	struct mgw_weak_stream		*control;
+	
+	struct mgw_source			*source;
+	struct mgw_output			*outputs_list;
+	pthread_mutex_t				outputs_mutex;
+};
+typedef struct mgw_stream mgw_stream_t;
 
 /* ----------------------------------------- */
 /* Device */
@@ -277,9 +287,7 @@ typedef struct mgw_weak_device mgw_weak_device_t;
 
 struct mgw_device {
 	struct mgw_context_data		context;
-
-	DARRAY(struct mgw_source)	sources;
-	DARRAY(struct mgw_output)	outputs;
+	DARRAY(struct mgw_stream)	streams;
 };
 typedef struct mgw_device mgw_device_t;
 
