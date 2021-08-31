@@ -1,27 +1,29 @@
-/**
- * File: mgw-output.c
- * 
- * Description: The logic implement of mgw output module
- * 
- * Datetime: 2021/5/10
- * */
 #include "mgw.h"
-
 #include "util/base.h"
 #include "util/tlog.h"
 #include "buffer/ring-buffer.h"
-#include "mgw-basic.h"
+
+#define RTMP_OUTPUT		"rtmp_output"
+#define RTSP_OUTPUT		"rtsp_output"
+#define HLS_OUTPUT		"hls_output"
+#define SRT_OUTPUT		"srt_output"
+#define FLV_OUTPUT		"flv_output"
+#define FFMPEG_OUTPUT	"ffmpeg_output"
 
 #define MGW_OUTPUT_RETRY_SEC	2
 #define MGW_OUTPUT_RETRY_MAX	20
 
-
 extern struct mgw_core *mgw;
 
-static bool mgw_output_active(struct mgw_output *output)
+static bool inline mgw_output_active(struct mgw_output *output)
 {
-    return output && output->context.data &&
+    return output && output->context.info_impl &&
             os_atomic_load_bool(&output->actived);
+}
+
+static int output_actived(void *opaque, call_params_t *call_params)
+{
+	return mgw_output_active((mgw_output_t*)opaque);
 }
 
 static inline bool reconnecting(const struct mgw_output *output)
@@ -39,7 +41,7 @@ static inline bool actived(const struct mgw_output *output)
 	return os_atomic_load_bool(&output->actived);
 }
 
-const struct mgw_output_info *find_output(const char *id)
+const struct mgw_output_info *find_output_info(const char *id)
 {
 	size_t i;
 	for (i = 0; i < mgw->output_types.num; i++)
@@ -49,15 +51,31 @@ const struct mgw_output_info *find_output(const char *id)
 	return NULL;
 }
 
+static proc_handler_t *output_get_source_proc_handler(mgw_output_t *output)
+{
+	return output ? output->parent_stream->source->context.procs : NULL;
+}
+
+static inline int output_proc_handler(mgw_output_t *output,
+					const char *name, call_params_t *params)
+{
+	proc_handler_t *procs = mgw_stream_get_procs(output->parent_stream);
+	params->in = output->context.obj_name;
+	params->in_size = strlen(params->in) + 1;
+	return proc_handler_do(procs, name, params);
+}
+
 static bool mgw_output_actual_start(mgw_output_t *output)
 {
 	bool success = false;
 	os_event_wait(output->stopping_event);
 	output->stop_code = 0;
 
-	if (output->valid && output->context.data)
-		if ((success = output->info.start(output->context.data)))
-			mgw_stream_signal_connected_internal(output->cb_data, output->context.id);
+	if (output->valid && output->context.info_impl)
+		if ((success = output->info.start(output->context.info_impl))) {
+			call_params_t params = {};
+			output_proc_handler(output, "started", &params);
+		}
 
 	os_atomic_set_bool(&output->actived, success);
 	return success;
@@ -76,11 +94,11 @@ static void mgw_output_actual_stop(mgw_output_t *output, bool force)
 	}
 
     os_event_signal(output->stopping_event);
-	if (force && output->context.data) {
+	if (force && output->context.info_impl) {
         blog(MGW_LOG_INFO, "will call info.stop  ");
-		output->info.stop(output->context.data);
+		output->info.stop(output->context.info_impl);
 	} else if (reconnecting(output)) {
-		output->stop_code = MGW_OUTPUT_SUCCESS;
+		output->stop_code = MGW_SUCCESS;
 	}
 	os_atomic_set_bool(&output->actived, false);
 }
@@ -91,7 +109,10 @@ static void *reconnect_thread(void *param)
 	unsigned long ms = output->reconnect_retry_cur_sec * 1000;
 
 	output->reconnect_thread_active = true;
-	mgw_stream_signal_reconnecting_internal(output->cb_data, output->context.id);
+	{
+		call_params_t params = {};
+		output_proc_handler(output, "reconnect", &params);
+	}
 
 	if (os_event_timedwait(output->reconnect_stop_event, ms) == ETIMEDOUT)
 		mgw_output_actual_start(output);
@@ -111,8 +132,11 @@ static void *stop_thread(void *arg)
 	if (!output || stopping(output))
 		return NULL;
 
-	tlog(TLOG_INFO, "stop output:%s internal!\n", output->context.id);
-	mgw_stream_signal_stop_output_internal(output->cb_data, output->context.id);
+	tlog(TLOG_INFO, "stop output:%s internal!\n", output->context.info_id);
+	{
+		call_params_t params = {};
+		output_proc_handler(output, "stop", &params);
+	}
 
 	return NULL;
 }
@@ -129,7 +153,7 @@ static void output_reconnect(struct mgw_output *output)
 	}
 
 	if (output->reconnect_retries >= output->reconnect_retry_max) {
-		output->stop_code = MGW_OUTPUT_DISCONNECTED;
+		output->stop_code = MGW_DISCONNECTED;
 		os_atomic_set_bool(&output->reconnecting, false);
 		if (0 == pthread_create(&output->stop_thread, NULL, stop_thread, output)) {
 			pthread_detach(output->stop_thread);
@@ -150,9 +174,9 @@ static void output_reconnect(struct mgw_output *output)
 
 	output->reconnect_retries++;
 
-    output->info.stop(output->context.data);
+    output->info.stop(output->context.info_impl);
 
-	output->stop_code = MGW_OUTPUT_DISCONNECTED;
+	output->stop_code = MGW_DISCONNECTED;
 	ret = pthread_create(&output->reconnect_thread, NULL, &reconnect_thread,
 			     output);
 	if (ret < 0) {
@@ -160,8 +184,8 @@ static void output_reconnect(struct mgw_output *output)
 		os_atomic_set_bool(&output->reconnecting, false);
 	} else {
 		tlog(TLOG_INFO, "Output '%s':  Reconnecting in %d seconds..",
-							output->context.id, output->reconnect_retry_sec);
-		const char *name = output->context.name;
+							output->context.info_id, output->reconnect_retry_sec);
+		const char *name = output->context.obj_name;
 		//signal_reconnect(output);
 	}
 }
@@ -173,20 +197,21 @@ static inline bool can_reconnect(const mgw_output_t *output, int code)
 {
 	bool reconnect_active = output->reconnect_retry_max != 0;
 
-	return (reconnecting(output) && code != MGW_OUTPUT_SUCCESS) ||
-	       (reconnect_active && code == MGW_OUTPUT_DISCONNECTED);
+	return (reconnecting(output) && code != MGW_SUCCESS) ||
+	       (reconnect_active && code == MGW_DISCONNECTED);
 }
 
-static void mgw_output_signal_stop(mgw_output_t *output, int code)
+static int output_signal_stop(void *opaque, struct call_params *params)
 {
-	if (!output)
+	mgw_output_t *output = opaque;
+	if (!output || !params || !params->in)
 		return;
 
-	output->stop_code = code;
-	if (!output->reconnect_retries && code != MGW_OUTPUT_DISCONNECTED)
-		output->last_error_status = code;
+	output->stop_code = *((int*)params->in);
+	if (!output->reconnect_retries && output->stop_code != MGW_DISCONNECTED)
+		output->last_error_status = output->stop_code;
 
-	if (can_reconnect(output, code)) {
+	if (can_reconnect(output, output->stop_code)) {
 		output_reconnect(output);
 	} else {
 		if (!reconnecting(output) && actived(output)) {
@@ -200,38 +225,13 @@ static void mgw_output_signal_stop(mgw_output_t *output, int code)
 	}
 }
 
-static bool mgw_output_source_is_ready(mgw_output_t *output)
+static int output_source_ready(void *opaque, struct call_params *params)
 {
+	mgw_output_t *output = opaque;
 	return !!output && output->valid && !!output->buffer;
 }
 
-static mgw_data_t *mgw_output_get_encoder_settings(mgw_output_t *output)
-{
-	if (!output || !output->buffer)
-		return NULL;
-
-	return mgw_rb_get_encoder_settings(output->buffer);
-}
-
-static size_t mgw_output_get_video_header(
-		mgw_output_t *output, uint8_t **header)
-{
-	if (!output || !output->buffer)
-		return 0;
-
-	return mgw_rb_get_video_header(output->buffer, header);
-}
-
-static size_t mgw_output_get_audio_header(
-		mgw_output_t *output, uint8_t **header)
-{
-	if (!output || !output->buffer)
-		return 0;
-
-	return mgw_rb_get_audio_header(output->buffer, header);
-}
-
-static int mgw_output_get_next_encoder_packet(
+static int output_get_encoder_packet(
 		mgw_output_t *output, struct encoder_packet *packet)
 {
 	if (!output || !packet || !output->buffer)
@@ -240,19 +240,81 @@ static int mgw_output_get_next_encoder_packet(
 	return mgw_rb_read_packet(output->buffer, packet);
 }
 
-mgw_output_t *mgw_output_create(const char *id, const char *name,
-							mgw_data_t *settings, void *cb_data)
+static const char *get_output_id(const char *protocol)
+{
+	if (!strncasecmp(protocol, "rtmp", 4) ||
+		!strncasecmp(protocol, "rtmpt", 5) ||
+		!strncasecmp(protocol, "rtmps", 5))
+		return RTMP_OUTPUT;
+	else if (!strncasecmp(protocol, "srt", 3))
+		return SRT_OUTPUT;
+	else if (!strncasecmp(protocol, "rtsp", 4) ||
+			 !strncasecmp(protocol, "rtsps", 5))
+		return RTSP_OUTPUT;
+	else if (!strncasecmp(protocol, "flv", 3))
+		return FLV_OUTPUT;
+	else if (!strncasecmp(protocol, "mp4", 3))
+		return FFMPEG_OUTPUT;
+	else if (!strncasecmp(protocol, "hls", 3))
+		return HLS_OUTPUT;
+	else
+		return NULL;
+}
+
+static bool mgw_output_init(struct mgw_output *output)
+{
+	output->control = bzalloc(sizeof(struct mgw_ref));
+	output->control->data 		= output;
+	output->reconnect_retry_sec = MGW_OUTPUT_RETRY_SEC;
+	output->reconnect_retry_max = MGW_OUTPUT_RETRY_MAX;
+
+	/** initialize buffer */
+	mgw_data_t *buf_settings = NULL;
+	if (!mgw_data_has_user_value(output->context.settings, "buffer")) {
+		buf_settings = mgw_rb_get_default();
+		mgw_data_set_string(buf_settings, "io_mode", "read");
+		mgw_data_set_string(buf_settings, "stream_name",
+					output->parent_stream->context.obj_name);
+		mgw_data_set_string(buf_settings, "info_id", output->context.info_id);
+		mgw_data_set_obj(output->context.settings, "buffer", buf_settings);
+	} else {
+		buf_settings = mgw_data_get_default_obj(output->context.settings, "buffer");
+	}
+
+	if (!(output->buffer = mgw_rb_create(buf_settings, NULL)))
+		return false;
+
+	if (buf_settings)
+		mgw_data_release(buf_settings);
+
+	/** initlialize callback */
+	proc_handler_add(output->context.procs, "actived", 			output_actived);
+	proc_handler_add(output->context.procs, "signal_stop",		output_signal_stop);
+	proc_handler_add(output->context.procs, "source_ready",		output_source_ready);
+
+	output->get_encoder_packet		= output_get_encoder_packet;
+	output->get_source_proc_handler	= output_get_source_proc_handler;
+
+	mgw_context_data_insert(&output->context,
+				&output->parent_stream->outputs_mutex,
+				&output->parent_stream->outputs_list);
+
+	return true;
+}
+
+static mgw_output_t *mgw_output_create_internal(
+				mgw_stream_t *stream, const char *info_id,
+				const char *output_name, mgw_data_t *settings)
 {
 	struct mgw_output *output = bzalloc(sizeof(struct mgw_output));
-	const struct mgw_output_info *info = find_output(id);
+	const struct mgw_output_info *info = find_output_info(info_id);
+	output->parent_stream = stream;
 
 	if (!info) {
-		blog(MGW_LOG_ERROR, "Output ID: %s not found!", id);
-		output->info.id			= bstrdup(id);
-		output->private_output	= true;
+		blog(MGW_LOG_ERROR, "Output ID: %s not found!", info_id);
+		output->info.id			= bstrdup(info_id);
 	} else {
 		output->info = *info;
-		output->private_output = false;
 	}
 
 	if (0 != os_event_init(&output->stopping_event, OS_EVENT_TYPE_MANUAL))
@@ -260,83 +322,58 @@ mgw_output_t *mgw_output_create(const char *id, const char *name,
 	if (0 != os_event_init(&output->reconnect_stop_event, OS_EVENT_TYPE_MANUAL))
 		goto failed;
 
-	/** initialize reconnect */
-	output->reconnect_retry_sec = MGW_OUTPUT_RETRY_SEC;
-	output->reconnect_retry_max = MGW_OUTPUT_RETRY_MAX;
-
-	/** init control */
-	output->control = bzalloc(sizeof(mgw_weak_output_t));
-	output->control->output = output;
-
-	/** initialize settings */
-	if (!settings && info && info->get_default) {
-		settings = mgw_data_create();
+	if (!settings && info && info->get_default)
 		settings = info->get_default();
-	}
 
-	/** initialize context */
-	if (!mgw_context_data_init(&output->context,
-				MGW_OBJ_TYPE_OUTPUT, settings, name, false))
+	if (!mgw_context_data_init(output, &output->context,
+				MGW_OBJ_TYPE_OUTPUT, settings, output_name, false))
 		goto failed;
 
-	/** initialize buffer */
-	mgw_data_t *buf_settings = NULL;
-	if (!mgw_data_has_user_value(settings, "buffer")) {
-		buf_settings = mgw_rb_get_default();
-		
-		mgw_data_set_string(buf_settings, "io_mode", "read");
-		mgw_data_set_string(buf_settings, "name", name);
-		mgw_data_set_string(buf_settings, "id", id);
-
-		mgw_data_set_obj(output->context.settings, "buffer", buf_settings);
-	} else {
-		buf_settings = mgw_data_get_default_obj(settings, "buffer");
-	}
-
-	output->buffer = mgw_rb_create(buf_settings, NULL);
-	if (!output->buffer)
+	if (!mgw_output_init(output))
 		goto failed;
-
-	if (buf_settings)
-		mgw_data_release(buf_settings);
-
-	/** initlialize callback */
-	output->active			= mgw_output_active;
-	output->signal_stop		= mgw_output_signal_stop;
-	output->source_is_ready = mgw_output_source_is_ready;
-	output->get_encoder_settings = mgw_output_get_encoder_settings;
-	output->get_video_header = mgw_output_get_video_header;
-	output->get_audio_header = mgw_output_get_audio_header;
-	output->get_next_encoder_packet = mgw_output_get_next_encoder_packet;
-
-	output->cb_data = cb_data;
 
 	if (info)
-		output->context.data =
+		output->context.info_impl =
 			info->create(output->context.settings, output);
 
 	output->valid = true;
-	blog(MGW_LOG_DEBUG, "Output %s (%s) created!", name, id);
+	blog(MGW_LOG_DEBUG, "Output %s (%s) created!", output_name, info_id);
 	return output;
 
 failed:
+	bfree(output->control);
 	mgw_output_destroy(output);
 	return NULL;
 }
 
+mgw_output_t *mgw_output_create(struct mgw_stream *stream,
+				const char *output_name, mgw_data_t *settings)
+{
+	const char *info_id = NULL;
+	const char *protocol = mgw_data_get_string(settings, "protocol");
+	if (!protocol) {
+		if (!(protocol = mgw_data_get_string(settings, "uri"))) {
+			tlog(TLOG_ERROR, "Couldn't find output protocol!\n");
+			return NULL;
+		}
+	}
+	if (protocol)
+		info_id = get_output_id(protocol);
+
+	return mgw_output_create_internal(stream, output_name, output_name, settings);
+}
+
 void mgw_output_destroy(struct mgw_output *output)
 {
-	if (!output)
-		return;
+	if (!output) return;
 
-	tlog(TLOG_INFO, "Output %s destroyed!", output->context.name);
-
+	tlog(TLOG_INFO, "Output %s destroyed!", output->context.obj_name);
 	if (output->valid && mgw_output_active(output))
 		mgw_output_actual_stop(output, true);
 
 	os_event_wait(output->stopping_event);
-	if (output->context.data)
-        output->info.destroy(output->context.data);
+	if (output->context.info_impl)
+        output->info.destroy(output->context.info_impl);
 
 	/** Destroy buffer */
 	if (output->buffer)
@@ -348,143 +385,90 @@ void mgw_output_destroy(struct mgw_output *output)
 	/** destroy output resource */
 	mgw_context_data_free(&output->context);
 
-	if (output->private_output)
-		bfree((void*)output->info.id);
-
-	blog(MGW_LOG_INFO, "free output!\n");
+	bfree((void*)output->info.id);
 	bfree(output);
 }
 
 void mgw_output_addref(mgw_output_t *output)
 {
-	if (!output)
-		return;
-	mgw_ref_addref(&output->control->ref);
+	if (output && output->control)
+		mgw_ref_addref(output->control);
 }
 
 void mgw_output_release(mgw_output_t *output)
 {
-	if (!mgw) {
-		blog(MGW_LOG_ERROR, "Tried to release a output but mgw core is NULL!");
-		return;
-	}
+	if (!output) return;
 
-	if (!output)
-		return;
-
-	mgw_weak_output_t *ctrl = output->control;
-	if (mgw_ref_release(&ctrl->ref)) {
+	struct mgw_ref *ctrl = output->control;
+	if (mgw_ref_release(ctrl)) {
 		mgw_output_destroy(output);
-		mgw_weak_output_release(ctrl);
+		bfree(ctrl);
 	}
-}
-
-void mgw_weak_output_addref(mgw_weak_output_t *weak)
-{
-	if (!weak)
-		return;
-
-	mgw_weak_ref_addref(&weak->ref);
-}
-
-void mgw_weak_output_release(mgw_weak_output_t *weak)
-{
-		if (!weak)
-		return;
-
-	if (mgw_weak_ref_release(&weak->ref))
-		bfree(weak);
 }
 
 mgw_output_t *mgw_output_get_ref(mgw_output_t *output)
 {
-		if (!output)
-		return NULL;
-
-	return mgw_weak_output_get_output(output->control);
+	if (!output) return NULL;
+	return mgw_get_ref(output->control) ?
+		(mgw_output_t*)output->control->data : NULL;
 }
 
-mgw_weak_output_t *mgw_output_get_weak_output(mgw_output_t *output)
+mgw_output_t *mgw_get_weak_output(mgw_output_t *output)
 {
-		if (!output)
-		return NULL;
-
-	mgw_weak_output_t *weak = output->control;
-	mgw_weak_output_addref(weak);
-	return weak;
+	if (!output) return NULL;
+	return (mgw_output_t*)output->control->data;
 }
 
-mgw_output_t *mgw_weak_output_get_output(mgw_weak_output_t *weak)
+bool mgw_output_references_output(
+			struct mgw_ref *ref,mgw_output_t *output)
 {
-	if (!weak)
-		return NULL;
-
-	if (mgw_weak_ref_get_ref(&weak->ref))
-		return weak->output;
-
-	return NULL;
-}
-
-bool mgw_weak_output_references_output(mgw_weak_output_t *weak,
-		mgw_output_t *output)
-{
-	return weak && output && weak->output == output;
+	return ref && output && ref->data == output;
 }
 
 const char *mgw_output_get_name(const mgw_output_t *output)
 {
-	if (!output)
-		return NULL;
-
-	return output->context.name;
+	if (!output) return NULL;
+	return output->context.obj_name;
 }
 
 bool mgw_output_start(mgw_output_t *output)
 {
-	if (!output || (!output->private_output && \
-			!output->context.data))
+	if (!output || (!output->context.is_private &&
+			!output->context.info_impl))
 		return false;
 
-	if (!output->buffer)
-		return false;
+	if (!output->buffer) return false;
     os_event_signal(output->stopping_event);
 	return mgw_output_actual_start(output);
 }
 
 void mgw_output_stop(mgw_output_t *output)
 {
-	if (!output)
-		return;
+	if (!output || !actived(output)) return;
 	mgw_output_actual_stop(output, true);
 }
 
 mgw_data_t *mgw_output_get_state(mgw_output_t *output)
 {
-    mgw_data_t *state_info = NULL;
+    if (!output) return NULL;
+
 	int push_state = 0;
-    const char *username = NULL;
-	bool authen = false;
-
-    if (!output)
-        return NULL;
-
-	if (!mgw_output_source_is_ready(output))
-		push_state = MGW_OUTPUT_STOPED;
+	if (!output_source_ready(output, NULL))
+		push_state = MGW_OUTPUT_STATUS_STOPED;
 	else if (mgw_output_active(output))
-		push_state = MGW_OUTPUT_STREAMING;
+		push_state = MGW_OUTPUT_STATUS_STREAMING;
 	else if (reconnecting(output))
-		push_state = MGW_OUTPUT_RECONNECTING;
-	else if (mgw_output_source_is_ready(output) &&
+		push_state = MGW_OUTPUT_STATUS_RECONNECTING;
+	else if (output_source_ready(output, NULL) &&
 			!mgw_output_active(output))
-		push_state = MGW_OUTPUT_CONNECTING;
+		push_state = MGW_OUTPUT_STATUS_CONNECTING;
 
-	username = mgw_data_get_string(output->context.settings, "username");
-	if (username && strlen(username)) {
-		blog(MGW_LOG_INFO, "user name:%s ", username);
+	bool authen = false;
+	const char *username = mgw_data_get_string(output->context.settings, "username");
+	if (username && strlen(username))
 		authen = true;
-	}
 
-    state_info = mgw_data_create();
+    mgw_data_t *state_info = mgw_data_create();
     mgw_data_set_bool(state_info, "active", mgw_output_active(output));
 	mgw_data_set_int(state_info, "state", push_state);
 	mgw_data_set_int(state_info, "failed_cnt", os_atomic_load_long(&output->failed_count));

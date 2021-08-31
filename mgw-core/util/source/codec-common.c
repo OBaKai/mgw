@@ -76,25 +76,25 @@ size_t mgw_get_aaclc_flv_header(
 	return i;
 }
 
-size_t mgw_aac_adts_header(uint32_t samplerate, uint32_t channels,
-						uint8_t **header, size_t size)
+size_t mgw_aac_add_adts(uint32_t samplerate, int profile,
+		uint32_t channels, size_t size, uint8_t *data, uint8_t *out)
 {
-	if (!header) return -1;
+	if (!data) return -1;
 
-	int profile = 2; // AAC LC
+	// int profile = 2; // AAC LC
 	uint8_t freqIdx = get_samplerate_index(samplerate);
-	*header = bzalloc(7);	//fix header
 
 	// fill in ADTS data
-	(*header)[0] = (uint8_t) 0xFF;
-	(*header)[1] = (uint8_t) 0xF9;
-	(*header)[2] = (uint8_t) (((profile - 1) << 6) + (freqIdx << 2) + (channels >> 2));
-	(*header)[3] = (uint8_t) (((channels & 3) << 6) + (size >> 11));
-	(*header)[4] = (uint8_t) ((size & 0x7FF) >> 3);
-	(*header)[5] = (uint8_t) (((size & 7) << 5) + 0x1F);
-	(*header)[6] = (uint8_t) 0xFC;
+	out[0] = (uint8_t) 0xFF;
+	out[1] = (uint8_t) 0xF9;
+	out[2] = (uint8_t) (((profile - 1) << 6) + (freqIdx << 2) + (channels >> 2));
+	out[3] = (uint8_t) (((channels & 3) << 6) + (size >> 11));
+	out[4] = (uint8_t) ((size & 0x7FF) >> 3);
+	out[5] = (uint8_t) (((size & 7) << 5) + 0x1F);
+	out[6] = (uint8_t) 0xFC;
 
-	return 7;
+	memcpy(out + 7, data, size);
+	return size + 7;
 }
 
 size_t mgw_aac_leave_adts(uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size)

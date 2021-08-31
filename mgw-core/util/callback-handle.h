@@ -22,8 +22,9 @@ struct call_params {
 	void	*out;
 	size_t	out_size;
 };
+typedef struct call_params call_params_t;
 
-proc_handler_t *proc_handler_create(void);
+proc_handler_t *proc_handler_create(void* opaque);
 void proc_handler_destroy(proc_handler_t *handler);
 
 bool proc_handler_add(proc_handler_t *handler, const char *name, cb_proc func);

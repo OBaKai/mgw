@@ -17,5 +17,6 @@ LIB_DIR = . \
 TARGET = libmgw-outputs.so
 TARGET_TYPE = "shared"
 LIBS = 
+CFLAGS = -fvisibility=hidden
 
 include $(PROJECT_ROOT_PATH)/compile_rules.mk

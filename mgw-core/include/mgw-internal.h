@@ -8,6 +8,7 @@
 #include "util/darray.h"
 #include "util/threading.h"
 #include "util/codec-def.h"
+#include "util/callback-handle.h"
 
 #include "outputs/mgw-outputs.h"
 #include "sources/mgw-sources.h"
@@ -35,17 +36,15 @@ struct mgw_module {
 };
 typedef struct mgw_module mgw_module_t;
 
-
 /* ------------------------------------------------------------------------- */
 /* mgw shared context data */
 struct mgw_context_data {
-	char *name;
-	char *id;
-    /** Store info implement */
-	void *data;
+	char *obj_name;
+	char *info_id;
+	void *info_impl;
 	mgw_data_t *settings;
 	//signal_handler_t *signals;
-	//proc_handler_t *procs;
+	proc_handler_t *procs;
 	enum mgw_obj_type type;
 
 	DARRAY(char *) rename_cache;
@@ -59,28 +58,27 @@ struct mgw_context_data {
 };
 
 extern bool mgw_context_data_init(
+		void					*opaque,
 		struct mgw_context_data *context,
 		enum mgw_obj_type       type,
 		mgw_data_t              *settings,
 		const char              *name,
 		bool                    is_private);
 extern void mgw_context_data_free(struct mgw_context_data *context);
-
 extern void mgw_context_data_insert(struct mgw_context_data *context,
-		pthread_mutex_t *mutex, void *first);
+				pthread_mutex_t *mutex, void *first);
 extern void mgw_context_data_remove(struct mgw_context_data *context);
-
 extern void mgw_context_data_setname(struct mgw_context_data *context,
-		const char *name);
+				const char *name);
 
 
 struct mgw_core_data {
 	struct mgw_service		*services_list;
-	struct mgw_stream		*pri_streams_list;
+	struct mgw_stream		*priv_streams_list;
 	struct mgw_device		*devices_list;
 
 	pthread_mutex_t			services_mutex;
-	pthread_mutexattr_t		pri_stream_mutex;
+	pthread_mutex_t			priv_stream_mutex;
 	pthread_mutex_t			devices_mutex;
 
 	long long               unnamed_index;
@@ -100,70 +98,44 @@ struct mgw_core {
 
 /* ------------------------------------------------------------------------- */
 /* ref-counting  */
-
-struct mgw_weak_ref {
+struct mgw_ref {
 	volatile long refs;
-	volatile long weak_refs;
+	void *data;
 };
 
-static inline void mgw_ref_addref(struct mgw_weak_ref *ref)
+static inline void mgw_ref_addref(struct mgw_ref *ref)
 {
 	os_atomic_inc_long(&ref->refs);
 }
 
-static inline bool mgw_ref_release(struct mgw_weak_ref *ref)
+static inline bool mgw_ref_release(struct mgw_ref *ref)
 {
 	return os_atomic_dec_long(&ref->refs) == -1;
 }
 
-static inline void mgw_weak_ref_addref(struct mgw_weak_ref *ref)
-{
-	os_atomic_inc_long(&ref->weak_refs);
-}
-
-static inline bool mgw_weak_ref_release(struct mgw_weak_ref *ref)
-{
-	return os_atomic_dec_long(&ref->weak_refs) == -1;
-}
-
-static inline bool mgw_weak_ref_get_ref(struct mgw_weak_ref *ref)
+static inline bool mgw_get_ref(struct mgw_ref *ref)
 {
 	long owners = ref->refs;
 	while (owners > -1) {
 		if (os_atomic_compare_swap_long(&ref->refs, owners, owners + 1))
 			return true;
-
 		owners = ref->refs;
 	}
-
 	return false;
 }
 
 /* ----------------------------------------- */
-/* Format */
-struct mgw_format {
-
-
-};
-
-struct mgw_weak_source {
-	struct mgw_source *source;
-    struct mgw_weak_ref ref;
-};
-
+/* Source */
 struct mgw_source {
-	/* source data contex */
 	struct mgw_context_data		context;
-	/* source informat operations */
 	struct mgw_source_info		info;
-    struct mgw_weak_source      *control;
+    struct mgw_ref				*control;
+	struct mgw_stream			*parent_stream;
 
 	uint32_t                    flags;
-	bool                        enabled;
-	/** Encoder Source without source_info, this field set to true*/
-	bool                        private_source;
-	/** Flag to identify source whether started */
-	bool						actived;
+	bool                        is_private;
+	volatile bool               enabled;
+	volatile bool				actived;
 
 	os_event_t					*stopping_event;
 	os_event_t					*reconnect_stop_event;
@@ -181,23 +153,15 @@ struct mgw_source {
 
 extern struct mgw_source_info *get_source_info(const char *id);
 extern bool mgw_source_init_context(struct mgw_source *source,
-		mgw_data_t *settings, const char *name, bool is_private);
+		mgw_data_t *settings, const char *source_name, bool is_private);
 extern void mgw_source_destroy(struct mgw_source *source);
 
 /* ----------------------------------------- */
 /* Output */
-
-struct mgw_weak_output {
-	struct mgw_output *output;
-    struct mgw_weak_ref ref;
-};
-
-typedef struct mgw_weak_output mgw_weak_output_t;
-
 struct mgw_output {
 	struct mgw_context_data		context;
 	struct mgw_output_info		info;
-    struct mgw_weak_output      *control;
+    struct mgw_ref				*control;
 	struct mgw_stream			*parent_stream;
 
 	int                         reconnect_retry_sec;
@@ -211,31 +175,28 @@ struct mgw_output {
 
 	volatile bool				actived;
 	bool						valid;
-	bool						private_output;
 	int							stop_code;
 	os_event_t					*stopping_event;
 	void						*buffer;
 	volatile long				failed_count;
 	pthread_t					stop_thread;
-	void						*cb_data;
+	int							last_error_status;
 
-	int			last_error_status;
-
-	bool		(*active)(mgw_output_t *output);
-	void		(*signal_stop)(mgw_output_t *output, int code);
-	bool		(*source_is_ready)(mgw_output_t *output);
-	mgw_data_t	*(*get_encoder_settings)(mgw_output_t *output);
-	size_t		(*get_video_header)(mgw_output_t *output, uint8_t **header);
-	size_t		(*get_audio_header)(mgw_output_t *output, uint8_t **header);
-	int			(*get_next_encoder_packet)(mgw_output_t *output, struct encoder_packet *packet);
+	proc_handler_t		*(*get_source_proc_handler)(mgw_output_t *output);
+	int					(*get_encoder_packet)(mgw_output_t *output, encoder_packet_t *packet);
 };
 
-extern const struct mgw_output_info *find_output(const char *id);
+extern const struct mgw_output_info *find_output_info(const char *id);
 void mgw_output_destroy(mgw_output_t *output);
 
 /* ----------------------------------------- */
-/* Service */
+/* Format */
+struct mgw_format {
 
+};
+
+/* ----------------------------------------- */
+/* Service */
 enum mgw_service_type {
 	MGW_SERVICE_RTMPIN,
 	MGW_SERVICE_RTMPOUT,
@@ -243,32 +204,21 @@ enum mgw_service_type {
 	MGW_SERVICE_SRTOUT,
 };
 
-struct mgw_weak_service {
-	struct mgw_weak_ref ref;
-	struct mgw_service *service;
-};
-
-typedef struct mgw_weak_service mgw_weak_service_t;
-
 struct mgw_service {
 	struct mgw_context_data		context;
 	struct mgw_service_info		info;
+	struct mgw_ref				*control;
+
 	enum mgw_service_type		type;
 };
 
 /* ----------------------------------------- */
 /* Stream */
-
-struct mgw_weak_stream {
-	struct mgw_weak_ref ref;
-	struct mgw_stream	*stream;
-};
-typedef struct mgw_weak_stream mgw_weak_stream_t;
-
 struct mgw_stream {
 	struct mgw_context_data		context;
-	struct mgw_weak_stream		*control;
-	
+	struct mgw_ref				*control;
+	struct mgw_deveice			*parent_device;
+
 	struct mgw_source			*source;
 	struct mgw_output			*outputs_list;
 	pthread_mutex_t				outputs_mutex;
@@ -277,17 +227,12 @@ typedef struct mgw_stream mgw_stream_t;
 
 /* ----------------------------------------- */
 /* Device */
-
-struct mgw_weak_device {
-	struct mgw_weak_ref ref;
-	struct mgw_device *device;
-};
-
-typedef struct mgw_weak_device mgw_weak_device_t;
-
 struct mgw_device {
 	struct mgw_context_data		context;
-	DARRAY(struct mgw_stream)	streams;
+	struct mgw_ref				*control;
+
+	struct mgw_stream			*stream_list;
+	pthread_mutex_t				stream_mutex;
 };
 typedef struct mgw_device mgw_device_t;
 

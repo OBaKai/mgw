@@ -80,9 +80,8 @@ typedef int64_t off64_t;
 
 #define SIZE_T_FORMAT "%zu"
 
-#ifndef safe_free
-#define safe_free(p) do {if ((p)) {free((p)); (p) = NULL;} } while(0)
-#endif
+#define public_visi		__attribute__((visibility("default")))
+#define private_visi	__attribute__((visibility("hidden")))
 
 #endif /* _MSC_VER */
 

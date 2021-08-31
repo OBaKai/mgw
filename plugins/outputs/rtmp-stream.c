@@ -10,6 +10,7 @@
 #include "util/tlog.h"
 #include "util/dstr.h"
 #include "util/platform.h"
+#include "util/callback-handle.h"
 
 #include "formats/flv-mux.h"
 #include "librtmp/log.h"
@@ -150,6 +151,18 @@ static const char *rtmp_stream_get_name(void *data)
 {
     UNUSED_PARAMETER(data);
     return RTMP_MODULE_NAME;
+}
+
+static inline int do_source_proc_handler(struct rtmp_stream *stream,
+				const char *name, call_params_t *params) {
+	proc_handler_t *handler = stream->output->get_source_proc_handler(stream->output);
+	return proc_handler_do(handler, name, params);
+}
+
+static inline int do_output_proc_handler(struct rtmp_stream *stream,
+				const char *name, call_params_t *params) {
+	proc_handler_t *handler = stream->output->context.procs;
+	return proc_handler_do(handler, name, params);
 }
 
 static void rtmp_stream_destroy(void *data)
@@ -335,11 +348,15 @@ static bool send_meta_data(struct rtmp_stream *stream, size_t idx)
 {
 	uint8_t *meta_data;
 	size_t  meta_data_size;
-	bool    success = true;
 
-	success = flv_meta_data(stream->output->get_encoder_settings(stream->output),
-					&meta_data, &meta_data_size, false, idx);
+	call_params_t params = {};
+	if (0 != do_source_proc_handler(stream, "get_encoder_settings", &params)) {
+		tlog(TLOG_ERROR, "Couldn't get encoder settings!\n");
+		return false;
+	}
 
+	bool success = flv_meta_data((mgw_data_t*)params.out,
+						&meta_data, &meta_data_size, false, idx);
 	if (success) {
 		success = RTMP_Write(&stream->rtmp, (char*)meta_data,
 				(int)meta_data_size, (int)idx) >= 0;
@@ -353,8 +370,7 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 		bool *next, int64_t ts)
 {
 	mgw_output_t  *context  = stream->output;
-	uint8_t       *header;
-
+	call_params_t params = {};
 	struct encoder_packet packet   = {
 		.type         = ENCODER_AUDIO,
 		.timebase_den = 1,
@@ -362,17 +378,20 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 		.dts		  = ts
 	};
 
+	if (0 != do_source_proc_handler(stream, "get_audio_header", &params)) {
+		tlog(TLOG_ERROR, "Couldn't get audio header!\n");
+		return false;
+	}
 	//must be AudioSpecificConfig -- aac
-	packet.size = context->get_audio_header(context, &header);
-	packet.data = bmemdup(header, packet.size);
+	packet.size = params.out_size;
+	packet.data = bmemdup(params.out, packet.size);
 	return send_packet_internal(stream, &packet, true, idx);
 }
 
 static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
 {
 	mgw_output_t  *context  = stream->output;
-	uint8_t       *header;
-
+	call_params_t params = {};
 	struct encoder_packet packet   = {
 		.type         = ENCODER_VIDEO,
 		.timebase_den = 1,
@@ -381,9 +400,13 @@ static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
 		.dts		  = ts
 	};
 
+	if (0 != do_source_proc_handler(stream, "get_video_header", &params)) {
+		tlog(TLOG_ERROR, "Couldn't get audio header!\n");
+		return false;
+	}
 	// must be AVCDecoderConfigurationRecord -- avc
-	packet.size = context->get_video_header(context, &header);
-	packet.data = bmemdup(header, packet.size);
+	packet.size = params.out_size;
+	packet.data = bmemdup(params.out, packet.size);
 	return send_packet_internal(stream, &packet, true, 0);
 }
 
@@ -424,15 +447,8 @@ static bool send_key_frame(struct rtmp_stream *stream, struct encoder_packet *pa
 	}
 
 	packet->data = data - 4;
-	// blog(MGW_LOG_INFO, "key frame(%d): data(%p) data[0]:%02x,data[1]:%02x,data[2]:%02x,data[3]:%02x,data[4]:%02x",
-	// 			packet->size, packet->data, packet->data[0],packet->data[1],
-	// 			packet->data[2],packet->data[3],packet->data[4]);
-
 	put_be32(&packet->data, size);
 	packet->size = size + 4;
-	// blog(MGW_LOG_INFO, "start_code(%d) sen frame(%d): data[0]:%02x,data[1]:%02x,data[2]:%02x,data[3]:%02x,data[4]:%02x",
-	// 			start_code, sen_packet.size, sen_packet.data[0],sen_packet.data[1],
-	// 			sen_packet.data[2],sen_packet.data[3],sen_packet.data[4]);
 	return send_packet_internal(stream, packet, false, packet->track_idx);
 }
 
@@ -489,7 +505,7 @@ static void *send_thread(void *data)
 
 		struct encoder_packet packet = {};
 		packet.data = stream->frame_buffer + MGW_AVCC_HEADER_SIZE;
-		if (0 >= (ret = stream->output->get_next_encoder_packet(
+		if (0 >= (ret = stream->output->get_encoder_packet(
 								stream->output, &packet))) {
             continue;
         }
@@ -533,8 +549,11 @@ error:
 	RTMP_Close(&stream->rtmp);
 	if (!stopping(stream) && disconnected(stream)) {
 		pthread_detach(stream->send_thread);
-		tlog(TLOG_INFO, "rtmp stream send_thread signal stop, ret:%d", MGW_OUTPUT_DISCONNECTED);
-		stream->output->signal_stop(stream->output, MGW_OUTPUT_DISCONNECTED);
+		tlog(TLOG_INFO, "rtmp stream send_thread signal stop, ret:%d", MGW_DISCONNECTED);
+		// stream->output->signal_stop(stream->output, MGW_OUTPUT_DISCONNECTED);
+		ret = MGW_DISCONNECTED;
+		call_params_t params = {.in = &ret};
+		do_output_proc_handler(stream, "signal_stop", &params);
 	}
 
 	stream->sent_headers = false;
@@ -556,7 +575,7 @@ static int init_send(struct rtmp_stream *stream)
     if (!send_meta_data(stream, 0)) {
         tlog(TLOG_ERROR, "Disconnected while attempting to connect to server!\n");
         stream->output->last_error_status = stream->rtmp.last_error_code;
-        return MGW_OUTPUT_DISCONNECTED;
+        return MGW_DISCONNECTED;
     }
 
     reset_semaphore(stream);
@@ -565,16 +584,14 @@ static int init_send(struct rtmp_stream *stream)
         RTMP_Close(&stream->rtmp);
         blog(MGW_LOG_ERROR, "Failed to create send thread!");
         os_atomic_set_bool(&stream->active, false);
-        return MGW_OUTPUT_ERROR;
+        return MGW_ERROR;
     }
 
-    return MGW_OUTPUT_SUCCESS;
+    return MGW_SUCCESS;
 }
 
 static bool init_connect(struct rtmp_stream *stream)
 {
-	mgw_data_t *settings = NULL;
-
 	if (stopping(stream)) {
 		pthread_join(stream->send_thread, NULL);
 	}
@@ -589,7 +606,10 @@ static bool init_connect(struct rtmp_stream *stream)
 	const char *netif_type = mgw_data_get_string(output_settings, "netif_type");
 	const char *netif_name = mgw_data_get_string(output_settings, "netif_name");
 
-	settings = stream->output->get_encoder_settings(stream->output);
+	call_params_t params = {};
+	if (0 != do_source_proc_handler(stream, "get_encoder_settings", &params))
+		tlog(TLOG_ERROR, "Couldn't get encoder settings!\n");
+
     if (path && key) {
         dstr_copy(&stream->path,        path);
 	    dstr_copy(&stream->key,         key);
@@ -623,7 +643,8 @@ static bool init_connect(struct rtmp_stream *stream)
     dstr_copy(&stream->encoder_name, "FMLE/3.0 (compatible; FMSc/1.0)");
 
 	mgw_data_release(output_settings);
-	mgw_data_release(settings);
+	if (params.out)
+		mgw_data_release((mgw_data_t *)params.out);
 	return true;
 }
 
@@ -633,7 +654,7 @@ static int try_connect(struct rtmp_stream *stream)
 				stream->path.array, stream->key.array);
 
     if (!RTMP_SetupURL(&stream->rtmp, stream->path.array))
-        return MGW_OUTPUT_BAD_PATH;
+        return MGW_BAD_PATH;
 
     RTMP_EnableWrite(&stream->rtmp);
 
@@ -674,33 +695,37 @@ static int try_connect(struct rtmp_stream *stream)
 
     if (!RTMP_Connect(&stream->rtmp, NULL)) {
         stream->output->last_error_status = stream->rtmp.last_error_code;
-        return MGW_OUTPUT_CONNECT_FAILED;
+        return MGW_CONNECT_FAILED;
     }
 
     if (!RTMP_ConnectStream(&stream->rtmp, 0))
-        return MGW_OUTPUT_INVALID_STREAM;
+        return MGW_INVALID_STREAM;
     tlog(TLOG_INFO, "Connecting rtmp stream success!\n");
     return init_send(stream);
 }
 
 static void *connect_thread(void *data)
 {
+	int ret;
+	call_params_t params = {.in = &ret};
     struct rtmp_stream *stream = data;
-    int ret;
 
     os_set_thread_name("rtmp-stream: connect thread");
 
     if (!init_connect(stream)) {
-		tlog(TLOG_INFO, "rtmp stream init_connect signal stop, ret:%d", MGW_OUTPUT_BAD_PATH);
-        stream->output->signal_stop(stream->output, MGW_OUTPUT_BAD_PATH);
+		tlog(TLOG_INFO, "rtmp stream init_connect signal stop, ret:%d", MGW_BAD_PATH);
+		ret = MGW_BAD_PATH;
+		do_output_proc_handler(stream, "signal_stop", &params);
+        // stream->output->signal_stop(stream->output, MGW_OUTPUT_BAD_PATH);
 		pthread_detach(stream->connect_thread);
         return NULL;
     }
 
 	stream->connect_count++;
-    if ((ret = try_connect(stream)) != MGW_OUTPUT_SUCCESS) {
+    if ((ret = try_connect(stream)) != MGW_SUCCESS) {
 		tlog(TLOG_ERROR, "Connect to %s failed: %d\n", stream->path.array, ret);
-        stream->output->signal_stop(stream->output, ret);
+		do_output_proc_handler(stream, "signal_stop", &params);
+        // stream->output->signal_stop(stream->output, ret);
     }
 
     if (!stopping(stream))
@@ -713,7 +738,7 @@ static void *connect_thread(void *data)
 static bool rtmp_stream_start(void *data)
 {
     struct rtmp_stream *stream = data;
-    if (!stream->output->source_is_ready(stream->output)) {
+    if (!do_output_proc_handler(stream, "source_ready", NULL)) {
 		blog(MGW_LOG_ERROR, "source is not ready!");
 		return false;
     }
@@ -726,6 +751,8 @@ static void rtmp_stream_stop(void *data)
 {
     struct rtmp_stream *stream = data;
 	RTMP *r = &stream->rtmp;
+	int ret = 0;
+	call_params_t params = {.in = &ret};
 
     if (!stream_valid(data))
 		return;
@@ -744,8 +771,10 @@ static void rtmp_stream_stop(void *data)
 		if (stream->stop_time == 0)
 			os_sem_post(stream->send_sem);
 	} else {
-		tlog(TLOG_INFO, "rtmp stream stop signal stop, ret:%d\n", MGW_OUTPUT_SUCCESS);
-		stream->output->signal_stop(stream->output, MGW_OUTPUT_SUCCESS);
+		tlog(TLOG_INFO, "rtmp stream stop signal stop, ret:%d\n", MGW_SUCCESS);
+		ret = MGW_SUCCESS;
+		do_output_proc_handler(stream, "signal_stop", &params);
+		// stream->output->signal_stop(stream->output, MGW_OUTPUT_SUCCESS);
 	}
 
 	for (int idx = 0; idx < r->Link.nStreams; idx++) {
@@ -776,10 +805,10 @@ static void rtmp_stream_apply_update(void *data, mgw_data_t *settings)
         return;
 }
 
-struct mgw_output_info rtmp_output_info = {
+public_visi struct mgw_output_info rtmp_output_info = {
 	.id                 = "rtmp_output",
 	.flags              = MGW_OUTPUT_AV |
-							MGW_OUTPUT_ENCODED,
+						  MGW_OUTPUT_ENCODED,
 	.get_name           = rtmp_stream_get_name,
 	.create             = rtmp_stream_create,
 	.destroy            = rtmp_stream_destroy,

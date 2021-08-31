@@ -23,6 +23,16 @@
 #define MGW_MAKE_VERSION_INT(major, minor, patch) \
 				((major << 24) | (minor << 16) | patch)
 
+/**< msb(8bits) is modules identity, lsb(16bits) is error code */
+#define mgw_sys_err(x)		((0x01 << 24) | ((x) & 0x0000ffff))
+#define mgw_mod_err(x)		((0x02 << 24) | ((x) & 0x0000ffff))
+#define mgw_ser_err(x)		((0x03 << 24) | ((x) & 0x0000ffff))
+#define mgw_dev_err(x)		((0x04 << 24) | ((x) & 0x0000ffff))
+#define mgw_str_err(x)		((0x05 << 24) | ((x) & 0x0000ffff))
+#define mgw_src_err(x)		((0x06 << 24) | ((x) & 0x0000ffff))
+#define mgw_out_err(x)		((0x07 << 24) | ((x) & 0x0000ffff))
+#define mgw_fmt_err(x)		((0x08 << 24) | ((x) & 0x0000ffff))
+
 #define MODULE_SUCCESS             0
 #define MODULE_ERROR              -1
 #define MODULE_FILE_NOT_FOUND     -2
@@ -30,21 +40,21 @@
 #define MODULE_INCOMPATIBLE_VER   -4
 
 /**< Output stream result for mgw internal */
-#define MGW_OUTPUT_SUCCESS         0
-#define MGW_OUTPUT_BAD_PATH       -1
-#define MGW_OUTPUT_CONNECT_FAILED -2
-#define MGW_OUTPUT_INVALID_STREAM -3
-#define MGW_OUTPUT_ERROR          -4
-#define MGW_OUTPUT_DISCONNECTED   -5
-#define MGW_OUTPUT_UNSUPPORTED    -6
-#define MGW_OUTPUT_NO_SPACE       -7
+#define MGW_SUCCESS         0
+#define MGW_BAD_PATH       -1
+#define MGW_CONNECT_FAILED -2
+#define MGW_INVALID_STREAM -3
+#define MGW_ERROR          -4
+#define MGW_DISCONNECTED   -5
+#define MGW_UNSUPPORTED    -6
+#define MGW_NO_SPACE       -7
 
 /**< Output stream status for user */
-#define MGW_OUTPUT_STOPED			0
-#define MGW_OUTPUT_CONNECTING		1
-#define MGW_OUTPUT_RECONNECTING		2
-#define MGW_OUTPUT_CONNECTFAILED	3
-#define MGW_OUTPUT_STREAMING		4
+#define MGW_OUTPUT_STATUS_STOPED			0
+#define MGW_OUTPUT_STATUS_CONNECTING		1
+#define MGW_OUTPUT_STATUS_RECONNECTING		2
+#define MGW_OUTPUT_STATUS_CONNECTFAILED		3
+#define MGW_OUTPUT_STATUS_STREAMING			4
 
 /**< For user, those field must be set to 
  *   mgw_data_t for settings to start a stream output
@@ -77,5 +87,13 @@ enum mgw_obj_type {
 	MGW_OBJ_TYPE_DEVEICE,
 };
 
+enum mgw_err_status {
+	MGW_ERR_SUCCESS	= 0,
+	MGW_ERR_EPARAM,			/**< error parameter */
+	MGW_ERR_INVALID_RES,	/**< Invalid resource */
+	MGW_ERR_EXISTED,		/**< Resource already existed */
+	MGW_ERR_ECREATE,
+	MGW_ERR_ESTARTING,		/**< Start a resource failed */
+};
 
 #endif  //_MGW_CORE_MGW_DEFS_H_

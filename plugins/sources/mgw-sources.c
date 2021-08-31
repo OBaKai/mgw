@@ -4,7 +4,7 @@
 
 #include "util/darray.h"
 
-#define SOURCES_DESCRIPTION     "sources: [ffmpeg-source, rtmp-source]"
+#define SOURCES_DESCRIPTION     "sources: [ffmpeg-source]"
 
 extern struct mgw_source_info ffmpeg_source_info;
 

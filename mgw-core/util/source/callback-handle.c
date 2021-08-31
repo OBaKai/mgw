@@ -1,10 +1,11 @@
 #include "callback-handle.h"
 #include "bmem.h"
 
-proc_handler_t *proc_handler_create(void)
+proc_handler_t *proc_handler_create(void* opaque)
 {
 	struct proc_handler *handler = bzalloc(sizeof(struct proc_handler));
 	da_init(handler->proc_functions);
+	handler->opaque = opaque;
 	return handler;
 }
 

@@ -147,7 +147,9 @@ struct encoder_packet {
 
     /** Encoder from which the track originated from */
 //    obs_encoder_t         *encoder;
+    volatile long         refs;
 };
+typedef struct encoder_packet encoder_packet_t;
 
 struct raw_video_frame {
     uint8_t             *data[MAX_PLANES];
@@ -190,8 +192,8 @@ size_t mgw_get_aac_lc_header(
 size_t mgw_get_aaclc_flv_header(
 			uint8_t channels, uint8_t samplesize,
 			uint32_t samplerate, uint8_t **header);
-size_t mgw_aac_adts_header(uint32_t samplerate, uint32_t channels,
-						uint8_t **header, size_t size);
+size_t mgw_aac_add_adts(uint32_t samplerate, int profile,
+		uint32_t channels, size_t size, uint8_t *data, uint8_t *out);
 size_t mgw_aac_leave_adts(uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size);
 
 #ifdef __cplusplus

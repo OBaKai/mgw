@@ -33,7 +33,7 @@ error:
 	return false;
 }
 
-bool outputs_load(struct darray *outputs, size_t type_size)
+static bool outputs_load(struct darray *outputs, size_t type_size)
 {
 	if (!outputs || (type_size != \
 			sizeof(struct mgw_output_info)))
@@ -45,7 +45,7 @@ bool outputs_load(struct darray *outputs, size_t type_size)
 	return true;
 }
 
-void outputs_unload(struct darray *outputs, size_t type_size)
+static void outputs_unload(struct darray *outputs, size_t type_size)
 {
 	if (!outputs || (type_size != \
 			sizeof(struct mgw_output_info)))
@@ -63,19 +63,19 @@ void outputs_unload(struct darray *outputs, size_t type_size)
 	}
 }
 
-uint32_t outputs_get_version(void)
+static uint32_t outputs_get_version(void)
 {
 	return MGW_MAKE_VERSION_INT(MGW_OUTPUTS_MAJOR_VER,
 			MGW_OUTPUTS_MINOR_VER, MGW_OUTPUTS_PATCH_VER);
 }
 
-const char *outputs_description(void)
+static const char *outputs_description(void)
 {
 	return OUTPUTS_DESCRIPTION;
 }
 
 
-struct mgw_module outputs_module = {
+public_visi struct mgw_module outputs_module = {
 	.id					= "outputs-module",
 	.load				= outputs_load,
 	.unload				= outputs_unload,

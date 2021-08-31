@@ -5,7 +5,6 @@ extern "C" {
 #include "mgw.h"
 #include "util/bmem.h"
 #include "util/tlog.h"
-#include "util/base.h"
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 }
@@ -76,9 +75,14 @@ msg_status Message::Register(const std::string &configPath)
 	}
 
 	/**< Get configuration from file */
-	infos_->api_key = mgw_data_get_string(settings_, "api_key");
-	infos_->secret_key = mgw_data_get_string(settings_, "secret_key");
-	infos_->server_host = mgw_data_get_string(settings_, "host");
+#ifdef DEBUG
+	const char *api_key = "test_api_key", *secret_key = "test_secret_key", *host = "test_host";
+#else
+	const char *api_key = "release_api_key", *secret_key = "release_secret_key", *host = "release_host";
+#endif
+	infos_->api_key = mgw_data_get_string(settings_, api_key);
+	infos_->secret_key = mgw_data_get_string(settings_, secret_key);
+	infos_->server_host = mgw_data_get_string(settings_, host);
 	infos_->vendor = mgw_data_get_string(settings_, "vendor");
 	infos_->sn = mgw_data_get_string(settings_, "sn");
 	infos_->type = mgw_data_get_string(settings_, "type");
@@ -89,23 +93,23 @@ msg_status Message::Register(const std::string &configPath)
 	/**< Start to register proccessing... */
 	/**< 1.AccessRequest  2.AuthenRequest  3.RegisterInternal */
 	if (!AccessRequest()) {
-		blog(MGW_LOG_ERROR, "Tried to call AccessRequest failed...");
+		tlog(TLOG_ERROR, "Tried to call AccessRequest failed...");
 		return msg_status::MSG_STATUS_ACCESSREQ_FAILED;
 	}
 
 	if (!AuthenRequest()) {
-		blog(MGW_LOG_ERROR, "Tried to call AuthenRequest failed...");
+		tlog(TLOG_ERROR, "Tried to call AuthenRequest failed...");
 		return msg_status::MSG_STATUS_AUTHENREQ_FAILED;
 	}
 
 	if (!RegisterInternal()) {
-		blog(MGW_LOG_INFO, "Tried to call RegisterInternal failed...");
+		tlog(TLOG_INFO, "Tried to call RegisterInternal failed...");
 		return msg_status::MSG_STATUS_REGISTERREQ_FAILED;
 	}
 
 	/**< Create and start ws client */
 	if (!InitMessageEnv()) {
-		blog(MGW_LOG_INFO, "Tried to create and start ws client failed...");
+		tlog(TLOG_INFO, "Tried to create and start ws client failed...");
 		return msg_status::MSG_STATUS_WSCLIENT_START_FAILED;
 	}
 
@@ -130,7 +134,7 @@ static std::string SendAPIReqMessage(CURL *curl, const std::string &host,
 	std::string result;
 	struct curl_slist *slist1 = NULL;
 
-	blog(MGW_LOG_INFO, "Request body:%s", body.data());
+	tlog(TLOG_INFO, "Request body:%s", body.data());
 
 	curl_easy_reset(curl);
 
@@ -148,7 +152,7 @@ static std::string SendAPIReqMessage(CURL *curl, const std::string &host,
 
 	// curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, 
 	// 			[](const void *ptr, size_t s, size_t n, void *p) {
-	// 				blog(MGW_LOG_INFO, "result data: %s", ptr);
+	// 				tlog(TLOG_INFO, "result data: %s", ptr);
 	// 				std::string *str = static_cast<std::string *>(p);
 	// 				str->append((const char*)ptr, s*n);
 	// 				return str->size();
@@ -166,7 +170,7 @@ static std::string SendAPIReqMessage(CURL *curl, const std::string &host,
 		slist1 = NULL;
 	}
 
-	blog(MGW_LOG_INFO, "Result string: %s", result.data());
+	tlog(TLOG_INFO, "Result string: %s", result.data());
 
 	return std::move(result);
 }
@@ -206,7 +210,7 @@ bool Message::AccessRequest(void)
 
 	std::string ret_str = SendAPIReqMessage(curl_, get_vhost(infos_->server_host), uri, body);
 	if (ret_str.empty()) {
-		blog(MGW_LOG_ERROR, "Request access request have a error...");
+		tlog(TLOG_ERROR, "Request access request have a error...");
 		return false;
 	}
 
@@ -264,7 +268,7 @@ bool Message::AuthenRequest(void)
 
 	std::string ret_str = SendAPIReqMessage(curl_, get_vhost(infos_->server_host), uri, body);
 	if (ret_str.empty()) {
-		blog(MGW_LOG_ERROR, "Request authen have a error...");
+		tlog(TLOG_ERROR, "Request authen have a error...");
 		return false;
 	}
 
@@ -295,7 +299,7 @@ bool Message::RegisterInternal(void)
 
 	std::string ret_str = SendAPIReqMessage(curl_, std::string(), uri, body);
 	if (ret_str.empty()) {
-		blog(MGW_LOG_ERROR, "Request register have a error...");
+		tlog(TLOG_ERROR, "Request register have a error...");
 		return false;
 	}
 	mgw_data_t *data = mgw_data_create_from_json(ret_str.data());
@@ -306,7 +310,7 @@ bool Message::RegisterInternal(void)
 	infos_->port = mgw_data_get_int(msgcenter, "port");
 	infos_->hb_interval = mgw_data_get_int(msgcenter, "ping_interval");
 	infos_->ws_uri = mgw_data_get_string(msgcenter, "ws");
-	blog(MGW_LOG_INFO, "host:%s, port:%d, interval:%d",
+	tlog(TLOG_INFO, "host:%s, port:%d, interval:%d",
 			infos_->server_host.data(), infos_->port, infos_->hb_interval);
 
 	mgw_data_release(data);

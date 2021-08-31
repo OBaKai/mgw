@@ -1,9 +1,63 @@
 {
     "name": "mgw-config",
+
+    "test_api_key":"3593cc920678dc15542e63f48ae5f98e",
+	"test_secret_key":"18fbe483382b478fe252595c24a4960af54bdbee",
+	"test_host":"http://t.ucastcn.com/API",
+
+    "release_api_key":"65665c6cc310aa782a4fffaf01863d4e",
+	"release_secret_key":"a12224e2c0b55ab1899e3cd2a41e267309ad0210",
+    "release_host":"http://api.ucastcn.com/v2",
+
+	"vendor": "YBWS",
+	"type": "mgw-server",
+	"sn": "MGWSERVERSNFORTEST91",
     "devices": [
         {
-            "type": "Q8",
-            "SN": "JovialYoungDeviceMgw"
+            "type": "Q9",
+            "SN": "Q9TESTDEVICE12349876",
+            "token": "",
+            "streams": [
+                {
+                    "name": "stream0",
+                    "source": {
+                        "channel":1,
+                        "name": "private_source",
+                        "active":true,
+                        "private":true,
+                        "url":"rtmp://192.168.0.16/live",
+                        "key":"stream0",
+                        "username":"",
+                        "password":"",
+                        "src_ip": "",
+                        "meta": {
+                            "vencoderID":"avc1",
+                            "width":1920,
+                            "height":1080,
+                            "fps":30,
+                            "vbps":1613,
+                            "aencoderID":"mp4a",
+                            "channels":2,
+                            "samplerate":44100,
+                            "samplesize":16,
+                            "abps":125
+                        }
+                    },
+                    "outputs": [
+                        {
+                            "channel": 1,
+                            "name": "",
+                            "active": true,
+                            "protocol":"rtmp",
+                            "path":"rtmp://192.168.0.16/live",
+                            "key":"stream0",
+                            "username": "",
+                            "password": "",
+                            "dest_ip": ""
+                        }
+                    ]
+                }
+            ]
         }
     ]
 }

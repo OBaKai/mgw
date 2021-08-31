@@ -149,7 +149,7 @@ static inline void send_message(struct ws_client *client,
 	common.msg_attr.bit_val.ack_req		= SUBMSG_TYPE_PONG == type ? 0 : 1;
 	common.msg_attr.bit_val.split_msg	= 0;
 
-	blog(MGW_LOG_INFO, "Waiting send sem.......");
+	tlog(TLOG_INFO, "Waiting send sem.......");
 	if (os_sem_wait(client->snd_sem) == 0) {
 		pthread_mutex_lock(&client->mutex);
 		uint8_t *payload = client->snd_buffer + LWS_PRE;
@@ -159,10 +159,10 @@ static inline void send_message(struct ws_client *client,
 			memcpy(payload+COMMON_HEAD_SIZE, body, size);
 			client->snd_size += size;
 		}
-		blog(MGW_LOG_INFO, "Send message:%d head size:%d, body size:%d", type, COMMON_HEAD_SIZE, size);
+		tlog(MGW_LOG_INFO, "Send message:%d head size:%d, body size:%d", type, COMMON_HEAD_SIZE, size);
 		int ret = lws_callback_on_writable(client->wsi);
 		os_atomic_inc_long(&client->send_req_cnt);
-		blog(MGW_LOG_INFO, "Sending message ret:%d, err:%s, req_cnt:%d", ret,
+		tlog(MGW_LOG_INFO, "Sending message ret:%d, err:%s, req_cnt:%d", ret,
 						strerror(errno), os_atomic_load_long(&client->send_req_cnt));
 		os_atomic_set_bool(&client->snd_req, true);
 		pthread_mutex_unlock(&client->mutex);
@@ -212,7 +212,7 @@ static void send_ping(struct ws_client *client)
 	ping_body_t	body = {};
 	body.port	= htons(client->info->port);
 	body.ip		= htonl(client->ip_val);//ip_str_to_value(client->ip.array);
-	blog(MGW_LOG_INFO, "Sending ping to %d, port:%d", body.ip, client->info->port);
+	tlog(MGW_LOG_INFO, "Sending ping to %d, port:%d", body.ip, client->info->port);
 	send_message(client, (void*)&body, sizeof(body), SUBMSG_TYPE_PING);
 }
 
@@ -297,13 +297,13 @@ static bool repeated_message(struct ws_client *client, text_recv_body_t *text)
 			new_dest = false;
 			if (client->record[i].rec_info[pos].last_msg_no == msg_no &&
 				abs(client->record[pos].last_recv_ts - cur_ts) < REPEATED_GAP_MAX) {
-				blog(MGW_LOG_INFO, "Is a repeated message, Drop it!");
+				tlog(MGW_LOG_INFO, "Is a repeated message, Drop it!");
 				return true;
 			} else {
 				/**< record it */
 				client->record[i].rec_info[pos].last_msg_no = msg_no;
 				client->record[i].rec_info[pos].last_ts = cur_ts;
-				blog(MGW_LOG_INFO, "record a new message!");
+				tlog(MGW_LOG_INFO, "record a new message!");
 				return false;
 			}
 		}
@@ -328,7 +328,7 @@ static int response_message(struct ws_client *client,
 	memcpy(&resp_text.com_body, com_body, sizeof(text_com_body_t));
 	resp_text.resp_body.status = resp->size;
 	/**< Response body */
-	blog(MGW_LOG_INFO, "Waiting send sem.......");
+	tlog(MGW_LOG_INFO, "Waiting send sem.......");
 	if (os_sem_wait(client->snd_sem) == 0) {
 		pthread_mutex_lock(&client->mutex);
 		// if (!sending(client)) {
@@ -339,7 +339,7 @@ static int response_message(struct ws_client *client,
 			lws_callback_on_writable(client->wsi);
 			os_atomic_set_bool(&client->snd_req, true);
 			os_atomic_inc_long(&client->send_req_cnt);
-			blog(MGW_LOG_INFO, "Reponse message, req_cnt:%ld", os_atomic_load_long(&client->send_req_cnt));
+			tlog(MGW_LOG_INFO, "Reponse message, req_cnt:%ld", os_atomic_load_long(&client->send_req_cnt));
 		// }
 		pthread_mutex_unlock(&client->mutex);
 	}
@@ -356,7 +356,7 @@ static void receive_message(struct ws_client *client,
 			break;
 		}
 		case SUBMSG_TYPE_PING: {
-			blog(MGW_LOG_INFO, "Receiving ping........................");
+			tlog(MGW_LOG_INFO, "Receiving ping........................");
 			send_pong(client);
 			break;
 		}
@@ -365,7 +365,7 @@ static void receive_message(struct ws_client *client,
 			if (!pong->authen) {
 				request_authorization(client);
 			}
-			blog(MGW_LOG_INFO, "Receiving pong........................");
+			tlog(MGW_LOG_INFO, "Receiving pong........................");
 			uint32_t ip = ntohl(pong->ip);
 			uint16_t port = ntohs(pong->port);
 			if (client->info->port != port || client->ip_val != ip) {
@@ -378,12 +378,12 @@ static void receive_message(struct ws_client *client,
 		}
 		case SUBMSG_TYPE_AUTHEN: {
 			authen_res_t *authen = in + com_head->msg_headlen;
-			blog(MGW_LOG_INFO, "Received authen message type:%d", authen->authen_type);
+			tlog(MGW_LOG_INFO, "Received authen message type:%d", authen->authen_type);
 			if (AUTHEN_TYPE_UNAUTHOR == authen->authen_type) {
 				tlog(TLOG_ERROR, "authorization result is unauthorization, retry later...\n");
 				request_authorization(client);
 			} else if (AUTHEN_TYPE_RES == authen->authen_type) {
-				blog(MGW_LOG_INFO, "Server response address:%s", authen->address);
+				tlog(MGW_LOG_INFO, "Server response address:%s", authen->address);
 				dstr_copy(&client->peer_address, (const char *)authen->address);
 			}
 			break;
@@ -421,7 +421,7 @@ static int lws_callback(struct lws *wsi,
 			goto retry;
 		}
 		case LWS_CALLBACK_CLIENT_ESTABLISHED: {
-			blog(MGW_LOG_INFO, "ws connected\n");
+			tlog(MGW_LOG_INFO, "ws connected\n");
 			request_authorization(client);
 			os_atomic_set_bool(&client->actived, true);
 			break;
@@ -443,7 +443,7 @@ static int lws_callback(struct lws *wsi,
 					os_sem_post(client->snd_sem);
 					os_atomic_set_bool(&client->snd_req, false);
 					os_atomic_inc_long(&client->send_do_cnt);
-					blog(MGW_LOG_INFO, "Post callback sending sem connote writable, send_cnt:%ld", os_atomic_load_long(&client->send_do_cnt));
+					tlog(MGW_LOG_INFO, "Post callback sending sem connote writable, send_cnt:%ld", os_atomic_load_long(&client->send_do_cnt));
 				}
 			// }
 			pthread_mutex_unlock(&client->mutex);
@@ -596,7 +596,7 @@ void *wsclient_create(struct wsclient_info *wsinfo)
 		goto error;
 	}
 
-	blog(MGW_LOG_INFO, "Post sending sem connote writable....");
+	tlog(MGW_LOG_INFO, "Post sending sem connote writable....");
 	os_sem_post(client->snd_sem);
 	return client;
 
@@ -680,7 +680,8 @@ int wsclient_send(void *data, const char *buf, size_t size)
 			lws_callback_on_writable(client->wsi);
 			os_atomic_set_bool(&client->snd_req, true);
 			os_atomic_inc_long(&client->send_req_cnt);
-			blog(MGW_LOG_INFO, "wsclient sending, req_cnt:%ld", os_atomic_load_long(&client->send_req_cnt));
+			tlog(MGW_LOG_INFO, "wsclient sending, req_cnt:%ld",
+						os_atomic_load_long(&client->send_req_cnt));
 			pthread_mutex_unlock(&client->mutex);
 		}
 	}

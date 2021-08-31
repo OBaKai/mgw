@@ -33,23 +33,26 @@ const char *mgw_get_module_name(mgw_module_t *module);
 //const char *mgw_get_module_binary_path(mgw_module_t *module);
 //const char mgw_get_module_data_path(mgw_module_t *module);
 
-/**
- * Gets a source by its name.
- *
- *   Increments the source reference counter, use obs_source_release to
- * release it when complete.
- */
-mgw_source_t *mgw_get_source_by_name(const char *name);
-
-/** Gets an output by its name. */
-mgw_output_t *mgw_get_output_by_name(const char *name);
-
-/** Gets an service by its name. */
+mgw_output_t *mgw_get_output_by_name(mgw_output_t *output_list,
+					pthread_mutex_t *mutex, const char *name);
+mgw_output_t *mgw_get_weak_output_by_name(mgw_output_t *output_list,
+						pthread_mutex_t *mutex, const char *name);
 mgw_service_t *mgw_get_service_by_name(const char *name);
+mgw_stream_t *mgw_get_priv_stream_by_name(const char *name);
+mgw_stream_t *mgw_get_stream_by_name(mgw_stream_t *stream_list,
+						pthread_mutex_t *mutex, const char *name);
+mgw_stream_t *mgw_get_weak_stream_by_name(mgw_stream_t *stream_list,
+						pthread_mutex_t *mutex, const char *name);
+mgw_device_t *mgw_get_device_by_name(const char *name);
 
 bool mgw_get_source_info(struct mgw_source_info *msi);
 bool mgw_get_output_info(struct mgw_output_info *moi);
 bool mgw_get_format_info(struct mgw_format_info *mfi);
+
+proc_handler_t *mgw_source_get_procs(void *source);
+proc_handler_t *mgw_output_get_procs(void *output);
+proc_handler_t *mgw_stream_get_procs(void *stream);
+proc_handler_t *mgw_device_get_procs(void *device);
 
 /** Sources */
 mgw_data_t *mgw_save_source(mgw_source_t *source);
@@ -71,19 +74,16 @@ mgw_data_array_t *mgw_save_outputs(void);
 /***********************************
  * Source operations
  **********************************/
-mgw_source_t *mgw_source_create(const char *id, const char *name, mgw_data_t *settings);
-mgw_source_t *mgw_source_create_private(const char *id, const char *name, mgw_data_t *settings);
+mgw_source_t *mgw_source_create(struct mgw_stream *stream,
+				const char *name, mgw_data_t *settings);
+bool mgw_source_is_private(mgw_source_t *source);
+
 void mgw_source_addref(mgw_source_t *source);
 void mgw_source_release(mgw_source_t *source);
-
-void mgw_weak_source_addref(mgw_weak_source_t *weak);
-void mgw_weak_source_release(mgw_weak_source_t *weak);
-
 mgw_source_t *mgw_source_get_ref(mgw_source_t *source);
-mgw_weak_source_t *mgw_source_get_weak_source(mgw_source_t *source);
-mgw_source_t *mgw_weak_source_get_source(mgw_weak_source_t *weak);
-bool mgw_weak_source_references_source(mgw_weak_source_t *weak,
-		mgw_source_t *source);
+mgw_source_t *mgw_get_weak_source(mgw_source_t *source);
+bool mgw_source_references_source(
+			struct mgw_ref *ref,mgw_source_t *source);
 
 /** For netstream and local file */
 bool mgw_source_start(struct mgw_source *source);
@@ -91,10 +91,6 @@ void mgw_source_stop(struct mgw_source *source);
 
 void mgw_source_update_settings(mgw_source_t *source, mgw_data_t *settings);
 void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet);
-
-mgw_data_t *mgw_source_get_setting(void *source);
-size_t mgw_source_get_video_header(void *source, uint8_t **header);
-size_t mgw_source_get_audio_header(void *source, uint8_t **header);
 
 void mgw_source_set_video_extra_data(
         mgw_source_t *source, uint8_t *data, size_t size);
@@ -106,45 +102,38 @@ void mgw_source_set_audio_extra_data(mgw_source_t *source,
  * Output operations
  **********************************/
 
-mgw_output_t *mgw_output_create(const char *id, const char *name,
-					mgw_data_t *settings, void *cb_data);
-
+mgw_output_t *mgw_output_create(struct mgw_stream *stream,
+				const char *output_name, mgw_data_t *settings);
 /**
  * Adds/releases a reference to an output.  When the last reference is
  * released, the output is destroyed.
  */
 void mgw_output_addref(mgw_output_t *output);
 void mgw_output_release(mgw_output_t *output);
-
-void mgw_weak_output_addref(mgw_weak_output_t *weak);
-void mgw_weak_output_release(mgw_weak_output_t *weak);
-
 mgw_output_t *mgw_output_get_ref(mgw_output_t *output);
-mgw_weak_output_t *mgw_output_get_weak_output(mgw_output_t *output);
-mgw_output_t *mgw_weak_output_get_output(mgw_weak_output_t *weak);
-bool mgw_weak_output_references_output(mgw_weak_output_t *weak,
-		mgw_output_t *output);
+mgw_output_t *mgw_get_weak_output(mgw_output_t *output);
+bool mgw_output_references_output(
+			struct mgw_ref *ref,mgw_output_t *output);
 
 const char *mgw_output_get_name(const mgw_output_t *output);
 mgw_data_t *mgw_output_get_state(mgw_output_t *output);
 
 bool mgw_output_start(mgw_output_t *output);
 void mgw_output_stop(mgw_output_t *output);
+void mgw_output_release_all(mgw_output_t *output_list);
 
 
 /***********************************
  * Service operations
  **********************************/
 mgw_service_t *mgw_service_create(const char *id, const char *name, mgw_data_t *settings);
+
 void mgw_service_addref(mgw_service_t *service);
 void mgw_service_release(mgw_service_t *service);
-
 mgw_service_t *mgw_service_get_ref(mgw_service_t *service);
-mgw_weak_service_t *mgw_service_get_weak_service(mgw_service_t *service);
-mgw_service_t *mgw_weak_service_get_service(mgw_weak_service_t *weak);
-
-bool mgw_weak_service_references_service(mgw_weak_service_t *weak,
-		mgw_service_t *service);
+mgw_service_t *mgw_get_weak_service(mgw_service_t *service);
+bool mgw_service_references_service(
+			struct mgw_ref *ref,mgw_service_t *service);
 
 const char *mgw_service_get_name(const mgw_service_t *service);
 
@@ -163,62 +152,54 @@ void mgw_service_release_output(mgw_service_t *service, mgw_output_t *output);
 /***********************************
  * Stream operations
  **********************************/
-mgw_stream_t *mgw_stream_create(const char *id, mgw_data_t *settings);
+mgw_stream_t *mgw_stream_create(mgw_device_t *device,
+		const char *stream_name, mgw_data_t *settings);
+void mgw_stream_stop(mgw_stream_t *stream);
+void mgw_stream_release_all(mgw_stream_t *stream_list);
+
 void mgw_stream_addref(mgw_stream_t *stream);
 void mgw_stream_release(mgw_stream_t *stream);
-
 mgw_stream_t *mgw_stream_get_ref(mgw_stream_t *stream);
-mgw_stream_t *mgw_weak_stream_get_stream(mgw_weak_stream_t *weak);
-bool mgw_weak_stream_references_stream(mgw_weak_stream_t *weak,
-		mgw_stream_t *stream);
+mgw_stream_t *mgw_get_weak_stream(mgw_stream_t *stream);
+bool mgw_stream_references_stream(
+			struct mgw_ref *ref,mgw_stream_t *stream);
 
 const char *mgw_stream_get_name(const mgw_stream_t *stream);
 
-bool mgw_stream_add_source(mgw_stream_t *stream,
-		const char *source_id, mgw_data_t *source_settings);
-void mgw_stream_release_source(mgw_stream_t *stream, mgw_source_t *source);
-void mgw_stream_release_source_by_id(mgw_stream_t *stream, const char *source_id);
+int mgw_stream_add_source(mgw_stream_t *stream, mgw_data_t *source_settings);
+void mgw_stream_release_source(mgw_stream_t *stream);
 
-bool mgw_stream_add_output(mgw_stream_t *stream,
-		const char *output_id, mgw_data_t output_settings);
+int mgw_stream_add_output(mgw_stream_t *stream, mgw_data_t *output_settings);
 void mgw_stream_release_output(mgw_stream_t *stream, mgw_output_t *output);
-void mgw_stream_release_output_by_id(mgw_stream_t *stream, const char *id);
+void mgw_stream_release_output_by_name(mgw_stream_t *stream, const char *id);
 
-mgw_data_t *mgw_stream_get_info(mgw_stream_t *stream);
+mgw_data_t *mgw_stream_get_output_info(mgw_stream_t *stream, const char *output_name);
 mgw_data_t *mgw_stream_get_output_setting(mgw_stream_t *stream, const char *id);
 
-void mgw_stream_signal_output_stop(mgw_stream_t *stream, char *output_id);
-void mgw_stream_signal_output_reconnecting(mgw_stream_t *stream, char *output_id);
-void mgw_stream_signal_output_connected(mgw_stream_t *stream, char *output_id);
-
-void mgw_stream_signal_source_stop(mgw_stream_t *stream, char *output_id);
-void mgw_stream_signal_source_reconnecting(mgw_stream_t *stream, char *output_id);
-void mgw_stream_signal_source_connected(mgw_stream_t *stream, char *output_id);
-
-bool mgw_stream_send_packet(mgw_stream_t *stream, struct encoder_packet *pkt);
+bool mgw_stream_send_packet(mgw_stream_t *stream, struct encoder_packet *packet);
 
 /***********************************
  * Device operations
  **********************************/
 mgw_device_t *mgw_device_create(const char *id, const char *name, mgw_data_t *settings);
+
 void mgw_device_addref(mgw_device_t *device);
 void mgw_device_release(mgw_device_t *device);
-
 mgw_device_t *mgw_device_get_ref(mgw_device_t *device);
-mgw_weak_device_t *mgw_device_get_weak_device(mgw_device_t *device);
-mgw_device_t *mgw_weak_device_get_device(mgw_weak_device_t *weak);
-bool mgw_weak_device_references_device(mgw_weak_device_t *weak,
-		mgw_device_t *device);
+mgw_device_t *mgw_get_weak_device(mgw_device_t *device);
+bool mgw_device_references_device(
+			struct mgw_ref *ref,mgw_device_t *device);
 
 const char *mgw_device_get_name(const mgw_device_t *device);
 
-bool mgw_device_add_stream(mgw_device_t *device, const char *id, mgw_data_t *settings);
-void mgw_device_release_stream(mgw_device_t device, const char *id);
-
-
+int mgw_device_add_stream(mgw_device_t *device, const char *id, mgw_data_t *settings);
+int mgw_device_add_stream_obj(mgw_device_t *device, mgw_stream_t *stream);
+void mgw_device_release_stream(mgw_device_t *device, const char *id);
+bool mgw_device_send_packet(mgw_device_t *device,
+						const char *stream_name,
+						struct encoder_packet *packet);
 
 #ifdef __cplusplus
 };
 #endif
-
 #endif  //_MGW_CORE_MGW_H_

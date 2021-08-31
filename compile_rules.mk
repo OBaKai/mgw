@@ -28,7 +28,7 @@ ifeq ($(DEBUG),"yes")
 else
 	BUILD := release
 	MACRO += NDEBUG
-	CFLAGS := -Wall -O2
+	CFLAGS += -Wall -O2
 	CXXFLAGS += -Wall -O2
 endif
 
@@ -66,7 +66,7 @@ ifeq ($(TARGET_TYPE), "app")
 else
 ifeq ($(TARGET_TYPE), "shared")
 	@-echo $(OBJECT_FILES) $(SOURCE_FILES)
-	$(CC) -o $@ -shared -fPIC -rdynamic -Wl,-rpath . $^ $(LDFLAGS) $(LIBS)
+	$(CC) -o $@ -shared -fPIC -rdynamic -Wl,-rpath . $^ $(LDFLAGS) $(LIBS) $(CFLAGS)
 else
 ifeq ($(OUTTYPE),"static")
 	$(AR) -rc $@ $^

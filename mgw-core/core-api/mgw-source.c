@@ -1,20 +1,24 @@
-/**
- * File: mgw-source.c
- * 
- * Description: The logic implement of mgw source module
- * 
- * Datetime: 2021/5/10
- * */
 #include "mgw.h"
-
 #include "util/base.h"
+#include "util/tlog.h"
+#include "util/threading.h"
 #include "buffer/ring-buffer.h"
+
+#define FFMPEG_SOURCE	"ffmpeg_source"
+#define LOCAL_SOURCE	"local_source"
+#define PRIVATE_SOURCE	"private_source"
 
 extern struct mgw_core *mgw;
 
-static bool mgw_source_active(struct mgw_source *source)
+static inline bool mgw_source_active(struct mgw_source *source)
 {
-	return source && source->buffer && source->actived;
+	return source && source->buffer &&
+			os_atomic_load_bool(&source->actived);
+}
+
+bool mgw_source_is_private(mgw_source_t *source)
+{
+	return source ? (source->is_private && !source->context.info_impl) : false;
 }
 
 struct mgw_source_info *get_source_info(const char *id)
@@ -27,122 +31,124 @@ struct mgw_source_info *get_source_info(const char *id)
 	return NULL;
 }
 
-bool mgw_source_init_context(struct mgw_source *source,
-		mgw_data_t *settings, const char *name, bool is_private)
+static int get_encoder_setting(void *source, struct call_params *params)
 {
-	if (!mgw_context_data_init(&source->context, MGW_OBJ_TYPE_SOURCE,\
-				settings, name, is_private))
-		return false;
-	/** signal notify handlers register */
+	mgw_source_t *s = source;
+	mgw_data_t *out = NULL;
+	if (!source || !params) return MGW_ERR_EPARAM;
 
-	return true;
+	if (s->context.info_impl && !s->is_private)
+		out = s->info.get_settings(s->context.info_impl);
+	else
+		out = mgw_data_get_obj(s->context.settings, "meta");
+	params->out = out;
+
+	return MGW_ERR_SUCCESS;
 }
 
-mgw_data_t *mgw_source_get_setting(void *src)
+static inline void get_header_internal(mgw_source_t *source,
+			call_params_t *params, enum encoder_type type)
 {
-	mgw_source_t *source = src;
-	if (!source)
-		return NULL;
+	if (source->context.info_impl && !source->is_private) {
+		params->out_size = source->info.get_extra_data(type, &params->out);
 
-	if (source->context.data && !source->private_source)
-		return source->info.get_settings(source->context.data);
-	else
-		return mgw_data_get_obj(source->context.settings, "meta");
+	} else if (source->is_private) {
+		if (ENCODER_VIDEO == type) {
+			params->out = (uint8_t *)source->video_header.array;
+			params->out_size = source->video_header.len;
+		} else {
+			params->out = (uint8_t *)source->audio_header.array;
+			params->out_size = source->audio_header.len;
+		}
+	}
+}
+
+static int get_video_header(void *source, call_params_t *params)
+{
+	if (!source || !params) return MGW_ERR_EPARAM;
+	get_header_internal((mgw_source_t *)source, params, ENCODER_VIDEO);
+	return MGW_ERR_SUCCESS;
+}
+
+static int get_audio_header(void *source, call_params_t *params)
+{
+	if (!source || !params) return MGW_ERR_EPARAM;
+	get_header_internal((mgw_source_t *)source, params, ENCODER_AUDIO);
+	return MGW_ERR_SUCCESS;
+}
+
+static int signal_start(void *source, call_params_t *params)
+{
+
+}
+
+static int signal_stop(void *source, call_params_t *params)
+{
+
+}
+
+bool mgw_source_init_context(struct mgw_source *source,
+		mgw_data_t *settings, const char *source_name, bool is_private)
+{
+	if (!mgw_context_data_init(source, &source->context,
+			MGW_OBJ_TYPE_SOURCE, settings, source_name, is_private))
+		return false;
+	/** signal notify handlers register */
+	proc_handler_add(source->context.procs, "get_video_header", get_video_header);
+	proc_handler_add(source->context.procs, "get_audio_header", get_audio_header);
+	proc_handler_add(source->context.procs, "get_encoder_settings", get_encoder_setting);
+	proc_handler_add(source->context.procs, "signal_start", signal_start);
+	proc_handler_add(source->context.procs, "signal_stop", signal_stop);
+
+	return true;
 }
 
 void mgw_source_set_video_extra_data(mgw_source_t *source,
 		uint8_t *extra_data, size_t size)
 {
-	if (!source)
-		return;
-	if (source->context.data && !source->private_source)
+	if (!source) return;
+	if (source->context.info_impl && !source->is_private)
 		return;
 
-	if (source->private_source) {
+	if (source->is_private)
 		bmem_copy(&source->video_header, (const char*)extra_data, size);
-	}
 }
 
 void mgw_source_set_audio_extra_data(mgw_source_t *source,
 		uint8_t channels, uint8_t samplesize, uint32_t samplerate)
 {
-	size_t header_size = 0;
 	uint8_t *header = NULL;
 
-	if (!source)
+	if (!source) return;
+	if (source->context.info_impl && !source->is_private)
 		return;
 
-	if (source->context.data && !source->private_source)
-		return;
-
-	if (source->private_source) {
-		header_size = mgw_get_aaclc_flv_header(channels, samplesize, samplerate, &header);
+	if (source->is_private) {
+		size_t header_size = mgw_get_aaclc_flv_header(
+							channels, samplesize, samplerate, &header);
 		bmem_copy(&source->audio_header, (const char *)header, header_size);
         bfree(header);
 	}
 }
 
-static size_t source_get_header_internal(mgw_source_t *source,
-			uint8_t **header, enum encoder_type type)
-{
-	size_t header_size = 0;
-	if (source->context.data && !source->private_source) {
-		header_size = source->info.get_extra_data(type, header);
-
-	} else if (source->private_source) {
-		if (ENCODER_VIDEO == type) {
-			*header = (uint8_t *)source->video_header.array;
-			header_size = source->video_header.len;
-		} else {
-			*header = (uint8_t *)source->audio_header.array;
-			header_size = source->audio_header.len;
-		}
-	}
-	return header_size;
-}
-
-size_t mgw_source_get_video_header(void *source, uint8_t **header)
-{
-	if (!source || !header)
-		return 0;
-
-	return source_get_header_internal((mgw_source_t *)source, header, ENCODER_VIDEO);
-}
-
-size_t mgw_source_get_audio_header(void *source, uint8_t **header)
-{
-	if (!source || !header)
-		return 0;
-
-	return source_get_header_internal((mgw_source_t *)source, header, ENCODER_AUDIO);
-}
-
 static bool mgw_source_init(struct mgw_source *source)
 {
-	source->control = bzalloc(sizeof(struct mgw_weak_source));
-	source->control->source = source;
+	source->control = bzalloc(sizeof(struct mgw_ref));
+	source->control->data = source;
 	
 	if (!source->enabled) {
 		mgw_data_t *buf_settings = mgw_rb_get_default();
 		if (buf_settings) {
-			/** aready set by ring buffer default: sort, shared_mem, read_by_time, mem_size, capacity */
-			/** need to set: io_mode, name, id */
 			mgw_data_set_string(buf_settings, "io_mode", "write");
-			mgw_data_set_string(buf_settings, "name", source->context.name);
-			mgw_data_set_string(buf_settings, "id", source->info.id);
-            bool sort = mgw_data_get_bool(buf_settings, "sort");
-            blog(MGW_LOG_INFO, "create source buffer with sort: %d", sort);
+			mgw_data_set_string(buf_settings, "stream_name",
+						source->parent_stream->context.obj_name);
+			mgw_data_set_string(buf_settings, "info_id", source->context.info_id);
 		}
 
-        struct source_param *param = bzalloc(sizeof(struct source_param));
-        param->source = source;
-        param->source_settings = mgw_source_get_setting;
-        param->audio_header = mgw_source_get_audio_header;
-        param->video_header = mgw_source_get_video_header;
-
-		source->buffer = mgw_rb_create(buf_settings, (void*)param);
-		if (!source->buffer)
+		if (!(source->buffer = mgw_rb_create(buf_settings, source))) {
+			mgw_data_release(buf_settings);
 			return false;
+		}
 
 		mgw_data_set_obj(source->context.settings, "buffer", buf_settings);
         mgw_data_release(buf_settings);
@@ -152,75 +158,117 @@ static bool mgw_source_init(struct mgw_source *source)
 	source->output_packet	= mgw_source_write_packet;
 	source->update_settings	= mgw_source_update_settings;
 
-	mgw_data_t *meta = mgw_data_get_obj(source->context.settings, "meta");
-	const char *video_payload = mgw_data_get_string(meta, "vencoderID");
-    uint32_t channels = mgw_data_get_int(meta, "channels");
-    uint32_t samplerate = mgw_data_get_int(meta, "samplerate");
-    uint32_t samplesize = mgw_data_get_int(meta, "samplesize");
+	if (source->is_private) {
+		mgw_data_t *meta = mgw_data_get_obj(source->context.settings, "meta");
+		if (meta) {
+			const char *video_payload = mgw_data_get_string(meta, "vencoderID");
+			uint32_t channels = mgw_data_get_int(meta, "channels");
+			uint32_t samplerate = mgw_data_get_int(meta, "samplerate");
+			uint32_t samplesize = mgw_data_get_int(meta, "samplesize");
 
-    mgw_source_set_audio_extra_data(source, channels, samplesize, samplerate);
-
-	if (!strcmp(video_payload, "avc1"))
-		source->video_payload = ENCID_H264;
-
-	mgw_context_data_insert(&source->context,
-					&mgw->data.sources_mutex,
-					&mgw->data.first_source);
+			mgw_source_set_audio_extra_data(source, channels, samplesize, samplerate);
+			if (!strcmp(video_payload, "avc1"))
+				source->video_payload = ENCID_H264;
+		}
+	}
 
 	return true;
 }
 
-static mgw_source_t *mgw_source_create_internal(const char *id,
-                const char *name, mgw_data_t *settings, bool is_private)
+static mgw_source_t *mgw_source_create_internal(
+				struct mgw_stream *stream, const char *info_id,
+                const char *source_name, mgw_data_t *settings)
 {
 	struct mgw_source *source = bzalloc(sizeof(struct mgw_source));
-	const struct mgw_source_info *info = get_source_info(id);
+	const struct mgw_source_info *info = get_source_info(info_id);
+	bool is_private = !strncmp(PRIVATE_SOURCE, info_id, strlen(PRIVATE_SOURCE));
+	source->parent_stream = stream;
+
 	if (!info) {
-		blog(MGW_LOG_INFO, "Source ID:%s not found! is private source: %d", id, is_private);
+		blog(MGW_LOG_INFO, "Source ID:%s not found! is private source: %d", info_id, is_private);
 		if (is_private) {
-			source->info.id			= bstrdup(id);
-			source->private_source	= true;
+			source->info.id		= bstrdup(info_id);
+			source->is_private	= true;
 		}
 	} else {
-		source->info			= *info;
-		source->private_source	= false;
+		source->info		= *info;
+		source->is_private	= false;
 	}
 
-	if (!mgw_source_init_context(source, settings, name, is_private))
-		goto failed;
-
 	if (!settings && info)
-		info->get_defaults(source->context.settings);
+		settings = info->get_defaults();
+
+	if (!mgw_source_init_context(source, settings, source_name, is_private))
+		goto failed;
 
 	if (!mgw_source_init(source))
 		goto failed;
 
 	if (info) {
-		source->context.data = info->create(source->context.settings, source);
-		if (!source->context.data) {
-			blog(MGW_LOG_ERROR, "Failed to create source info: %s", id);
+		source->context.info_impl = info->create(source->context.settings, source);
+		if (!source->context.info_impl) {
+			blog(MGW_LOG_ERROR, "Failed to create source info: %s", info_id);
 			goto failed;
 		}
+
+		/** Get source settings */
+		/** meta, video extra data, audio extra data */
+		mgw_data_t *meta_settings = source->info.get_settings(source->context.info_impl);
+		if (mgw_data_has_user_value(source->context.settings, "meta"))
+			mgw_data_erase(source->context.settings, "meta");
+
+		mgw_data_set_obj(source->context.settings, "meta", meta_settings);
+
+		uint8_t *header = NULL;
+		size_t size = source->info.get_extra_data(ENCODER_VIDEO, &header);
+		bmem_copy(&source->video_header, (const char *)header, size);
+		bfree(header);
+
+		size = source->info.get_extra_data(ENCODER_AUDIO, &header);
+		bmem_copy(&source->video_header, (const char *)header, size);
+		bfree(header);
 	}
 
-	source->enabled = true;
+	os_atomic_set_bool(&source->enabled, true);
 	return source;
 
 failed:
-	blog(MGW_LOG_ERROR, "Create source %s failed!", name);
+	tlog(TLOG_ERROR, "Create source %s failed!", source_name);
+	bfree(source->control);
 	mgw_source_destroy(source);
 	return NULL;
 }
 
-mgw_source_t *mgw_source_create(const char *id,
-                const char *name, mgw_data_t *settings)
+static const char *get_source_id(const char *protocol)
 {
-	return mgw_source_create_internal(id, name, settings, false);
+	if (!strncasecmp(protocol, "rtmp", 4) ||
+		!strncasecmp(protocol, "rtmpt", 5) ||
+		!strncasecmp(protocol, "rtmps", 5) ||
+		!strncasecmp(protocol, "srt", 3) ||
+		!strncasecmp(protocol, "rtsp", 4) ||
+		!strncasecmp(protocol, "rtsps", 5) ||
+		!strncasecmp(protocol, "flv", 3) ||
+		!strncasecmp(protocol, "mp4", 3) ||
+		!strncasecmp(protocol, "hls", 3) ||
+		!strncasecmp(protocol, "local", 5))
+		return FFMPEG_SOURCE;
+	else
+		return PRIVATE_SOURCE;
 }
 
-mgw_source_t *mgw_source_create_private(const char *id, const char *name, mgw_data_t *settings)
+mgw_source_t *mgw_source_create(struct mgw_stream *stream,
+			const char *source_name, mgw_data_t *settings)
 {
-	return mgw_source_create_internal(id, name, settings, true);
+	const char *info_id;
+	const char *protocol = mgw_data_get_string(settings, "protocol");
+	if (!protocol) {
+		if (!(protocol = mgw_data_get_string(settings, "uri")))
+			info_id = PRIVATE_SOURCE;
+	}
+	if (protocol)
+		info_id = get_source_id(protocol);
+
+	return mgw_source_create_internal(stream, info_id, source_name, settings);
 }
 
 void mgw_source_destroy(struct mgw_source *source)
@@ -228,16 +276,16 @@ void mgw_source_destroy(struct mgw_source *source)
 	if (!source)
 		return;
 
-	blog(MGW_LOG_DEBUG, "%s source %s destroyed!",\
+	tlog(TLOG_DEBUG, "%s source %s destroyed!",\
 			source->context.is_private ? "private" : "",\
-			source->context.name);
+			source->context.obj_name);
 
 	if (source->enabled && mgw_source_active(source))
 		mgw_source_stop(source);
 	
-	if (source->context.data) {
-		source->info.destroy(source->context.data);
-		source->context.data = NULL;
+	if (source->context.info_impl) {
+		source->info.destroy(source->context.info_impl);
+		source->context.info_impl = NULL;
 	}
 	mgw_context_data_free(&source->context);
 
@@ -254,140 +302,71 @@ void mgw_source_destroy(struct mgw_source *source)
 	bmem_free(&source->audio_header);
 	bmem_free(&source->video_header);
 
-	if (source->private_source)
+	if (source->is_private)
 		bfree((void*)source->info.id);
-    blog(MGW_LOG_INFO, "-------------->> free source!\n");
+
 	bfree(source);
 }
 
 void mgw_source_addref(mgw_source_t *source)
 {
-	if (!source)
-		return;
-	mgw_ref_addref(&source->control->ref);
+	if (!source) return;
+	mgw_ref_addref(source->control);
 }
 
 void mgw_source_release(mgw_source_t *source)
 {
-	if (!mgw) {
-		blog(MGW_LOG_ERROR, "Tried to release a source but mgw core is NULL");
-		return;
-	}
-	if (!source)
-		return;
-
-	mgw_weak_source_t *ctrl = source->control;
-	if (mgw_ref_release(&ctrl->ref)) {
+	if (!source) return;
+	struct mgw_ref *ctrl = source->control;
+	if (mgw_ref_release(ctrl)) {
 		mgw_source_destroy(source);
-		mgw_weak_source_release(ctrl);
+		bfree(ctrl);
 	}
-}
-
-void mgw_weak_source_addref(mgw_weak_source_t *weak)
-{
-	if (!weak)
-		return;
-	mgw_weak_ref_addref(&weak->ref);
-}
-
-void mgw_weak_source_release(mgw_weak_source_t *weak)
-{
-	if (!weak)
-		return;
-	if (mgw_weak_ref_release(&weak->ref))
-		bfree(weak);
 }
 
 mgw_source_t *mgw_source_get_ref(mgw_source_t *source)
 {
-	if (!source)
-		return NULL;
-	return mgw_weak_source_get_source(source->control);
+	if (!source) return NULL;
+	mgw_get_ref(source->control) ?
+		(mgw_source_t*)source->control->data : NULL;
 }
 
-mgw_weak_source_t *mgw_source_get_weak_source(mgw_source_t *source)
+mgw_source_t *mgw_get_weak_source(mgw_source_t *source)
 {
-	if (!source)
-		return NULL;
-	mgw_weak_source_t *weak = source->control;
-	mgw_weak_source_addref(weak);
-	return weak;
+	if (!source) return NULL;
+	return (mgw_source_t*)source->control->data;
 }
 
-mgw_source_t *mgw_weak_source_get_source(mgw_weak_source_t *weak)
-{
-	if (!weak)
-		return NULL;
-
-	if (mgw_weak_ref_get_ref(&weak->ref))
-		return weak->source;
-
-	return NULL;
-}
-
-bool mgw_weak_source_references_source(mgw_weak_source_t *weak,
+bool mgw_source_references_source(struct mgw_ref *ref,
 		mgw_source_t *source)
 {
-	return weak && source && weak->source == source;
+	return ref && source && ref->data == source;
 }
 
 void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet)
 {
 	uint8_t *header = NULL;
-	size_t size = 0;
-	int8_t start_code = 0;
-	struct encoder_packet save_packet = {};
 
     if (!source || !packet || !source->buffer)
 		return;
 
-	memcpy(&save_packet, packet, sizeof(save_packet));
-	start_code = mgw_avc_get_startcode_len((const uint8_t*)packet->data);
-	if (start_code > 0) {
-		if (ENCODER_VIDEO == packet->type) {
-			if (packet->keyframe && ENCID_H264 == source->video_payload) {
-				size = mgw_parse_avc_header(&header, packet->data, packet->size);
-				if (size > 4 && header) {
-					mgw_source_set_video_extra_data(source, header, size);
-					save_packet.priority = FRAME_PRIORITY_LOW;
-					bfree(header);
+	if (source->is_private && !source->context.info_impl) {
+		int8_t start_code = mgw_avc_get_startcode_len((const uint8_t*)packet->data);
+		if (start_code > 0) {
+			if (ENCODER_VIDEO == packet->type) {
+				if (packet->keyframe && ENCID_H264 == source->video_payload) {
+					size_t size = mgw_parse_avc_header(&header, packet->data, packet->size);
+					if (size > 4 && header) {
+						mgw_source_set_video_extra_data(source, header, size);
+						packet->priority = FRAME_PRIORITY_LOW;
+						bfree(header);
+					}
 				}
 			}
 		}
 	}
 
-	/*if (start_code > 0) {
-		if (ENCODER_VIDEO == packet->type) {
-			if (packet->keyframe && ENCID_H264 == source->video_payload) {
-				size = mgw_parse_avc_header(&header, packet->data, packet->size);
-				if (size > 4 && header) {
-					mgw_source_set_video_extra_data(source, header, size);
-					save_packet.priority = FRAME_PRIORITY_LOW;
-					bfree(header);
-				}
-				save_packet.size = mgw_avc_get_keyframe(packet->data, packet->size, &save_packet.data);
-
-				blog(MGW_LOG_INFO, "Source save key frame(%ld)! data[-3]=%02x, "\
-						"data[-2]=%02x, data[-1]=%02x, data[0]=%02x data[1]=%02x",
-						save_packet.size ,save_packet.data[-3], save_packet.data[-2],
-						save_packet.data[-1], save_packet.data[0], save_packet.data[1]);
-			} else if (!packet->keyframe) {
-				save_packet.data = (uint8_t*)mgw_avc_find_startcode((const uint8_t*)save_packet.data,
-									(const uint8_t*)(save_packet.data + packet->size));
-				int8_t start_code_size = mgw_avc_get_startcode_len((const uint8_t*)save_packet.data);
-				if (start_code_size >= 0) {
-					save_packet.data += start_code_size;
-					save_packet.size -= start_code_size;
-				}
-				save_packet.priority = FRAME_PRIORITY_HIGH;
-			}
-		}
-	} else {
-		save_packet.data += 4;
-		save_packet.size -= 4;
-	}*/
-
-	mgw_rb_write_packet(source->buffer, &save_packet);
+	mgw_rb_write_packet(source->buffer, &packet);
 }
 
 void mgw_source_update_settings(mgw_source_t *source, mgw_data_t *settings)
@@ -396,31 +375,29 @@ void mgw_source_update_settings(mgw_source_t *source, mgw_data_t *settings)
 		return;
 }
 
-
 /** --------------------------------------------------------------------- */
 /** For local file source and netstream  */
-
 bool mgw_source_start(struct mgw_source *source)
 {
 	if (!source || !source->enabled || !source->buffer)
 		return false;
-
-	if (!source->private_source && !source->context.data)
+	if (mgw_source_is_private(source)) {
+		tlog(TLOG_DEBUG, "Source %s is private\n", source->context.obj_name);
 		return false;
+	}
 
-	if (source->actived) {
+	if (mgw_source_active(source)) {
 		mgw_source_stop(source);
 		os_event_wait(source->stopping_event);
 		source->stop_code = 0;
-		source->actived = false;
+		os_atomic_set_bool(&source->actived, false);
 	}
 
-	source->actived = true;
-
-	if (source->context.data)
+	os_atomic_set_bool(&source->actived, true);
+	if (source->context.info_impl)
 		source->actived = source->info.start(source);
 
-	return source->actived;
+	return mgw_source_active(source);
 }
 
 void mgw_source_stop(struct mgw_source *source)
@@ -428,10 +405,10 @@ void mgw_source_stop(struct mgw_source *source)
 	if (!source || !source->enabled || !source->buffer)
 		return;
 
-	if (!source->private_source && !source->context.data)
+	if (!source->is_private && !source->context.info_impl)
 		return;
 
-	if (source->actived && source->context.data){
+	if (source->actived && source->context.info_impl){
 		source->info.stop(source);
 		os_event_signal(source->stopping_event);
 		source->stop_code = 0;

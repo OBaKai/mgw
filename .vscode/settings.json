@@ -93,6 +93,8 @@
 		"ws-client.h": "c",
 		"libwebsockets.h": "c",
 		"ff-demuxing.h": "c",
-		"message-def.h": "c"
+		"message-def.h": "c",
+		"dstr.h": "c",
+		"callback-handle.h": "c"
 	}
 }

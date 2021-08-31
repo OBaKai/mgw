@@ -23,7 +23,6 @@ extern "C" {
 
 struct mgw_source;
 typedef struct mgw_source mgw_source_t;
-typedef struct mgw_weak_source  mgw_weak_source_t;
 
 struct mgw_source_info {
 	const char              *id;
@@ -36,7 +35,7 @@ struct mgw_source_info {
 	bool        (*start)(void *data);
 	void        (*stop)(void *data);
 
-	void        (*get_defaults)(mgw_data_t *settings);
+	mgw_data_t  *(*get_defaults)(void);
 	void        (*update)(void *data, mgw_data_t *settings);
 	mgw_data_t  *(*get_settings)(void *data);
     size_t      (*get_extra_data)(enum encoder_type type, uint8_t **data);

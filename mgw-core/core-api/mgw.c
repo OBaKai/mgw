@@ -2,6 +2,7 @@
 #include "mgw-module.h"
 #include "mgw-defs.h"
 #include "util/base.h"
+#include "util/tlog.h"
 #include "util/dstr.h"
 #include "util/mgw-data.h"
 #include "util/platform.h"
@@ -11,7 +12,6 @@
 #include <assert.h>
 
 struct mgw_core *mgw = NULL;
-
 
 bool mgw_initialized(void)
 {
@@ -104,11 +104,7 @@ static bool mgw_init_data(void)
 		return false;
 	if (0 != pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE))
 		goto failed;
-	if (0 != pthread_mutex_init(&data->sources_mutex, &attr))
-		goto failed;
-	if (0 != pthread_mutex_init(&data->formats_mutex, &attr))
-		goto failed;
-	if (0 != pthread_mutex_init(&data->outputs_mutex, &attr))
+	if (0 != pthread_mutex_init(&data->priv_streams_list, &attr))
 		goto failed;
 	if (0 != pthread_mutex_init(&data->services_mutex, &attr))
 		goto failed;
@@ -127,18 +123,13 @@ static bool mgw_init(mgw_data_t *data)
 {
 	mgw = bzalloc(sizeof(struct mgw_core));
 
-	/** log system enviroment */
 	log_system_info();
-	/** initialize mgw data */
 	if (!mgw_init_data())
 		return false;
 
 	if (mgw->data.valid && data)
 		mgw_data_apply(mgw->data.private_data, data);
 
-	/** callback handlers initialize ??? */
-
-	/** load and register all modules */
 	mgw_load_all_modules(mgw);
 
 	return true;
@@ -152,7 +143,7 @@ static bool mgw_start_services(void)
 bool mgw_startup(mgw_data_t *store)
 {
 	if (mgw) {
-		blog(MGW_LOG_WARNING, "mgw aready exist! Tried to call mgw_startup more than once");
+		tlog(TLOG_WARN, "mgw aready exist! Tried to call mgw_startup more than once");
 		return false;
 	}
 
@@ -162,14 +153,14 @@ bool mgw_startup(mgw_data_t *store)
 	}
 
 	if (!mgw_start_services())
-		blog(MGW_LOG_INFO, "All services invalid!");
+		tlog(TLOG_INFO, "All services invalid!");
 
 	return true;
 }
 
 static void destroy_all_services(void)
 {
-	mgw_service_t *service = mgw->data.first_service;
+	mgw_service_t *service = mgw->data.services_list;
 	while(service) {
 		mgw_service_t *next = (mgw_service_t*)service->context.next;
 		mgw_service_stop(service);
@@ -178,40 +169,40 @@ static void destroy_all_services(void)
 	}
 }
 
-static void destroy_all_outputs(void)
+void mgw_output_release_all(mgw_output_t *output_list)
 {
-	mgw_output_t *output = mgw->data.first_output;
-	while(output) {
-		mgw_output_t *next = (mgw_output_t*)output->context.next;
+	mgw_output_t *output = output_list;
+	while (output) {
+		mgw_output_t *next = (mgw_output_t *)output->context.next;
 		mgw_output_stop(output);
 		mgw_output_release(output);
 		output = next;
 	}
+	output_list = NULL;
 }
 
-static void destroy_all_sources(void)
+void mgw_stream_release_all(mgw_stream_t *stream_list)
 {
-	mgw_source_t *source = mgw->data.first_source;
-	while(source) {
-		mgw_source_t *next = (mgw_source_t*)source->context.next;
-		mgw_source_stop(source);
-		mgw_source_release(source);
-		source = next;
+	mgw_stream_t *stream = stream_list;
+	while (stream) {
+		mgw_stream_t *next = (mgw_stream_t *)stream->context.next;
+		mgw_stream_stop(stream);
+		mgw_stream_release(stream);
+		stream = next;
 	}
-	mgw->data.first_source = NULL;
+	stream_list = NULL;
 }
 
 static void free_mgw_data(void)
 {
 	struct mgw_core_data *data = &mgw->data;
-	pthread_mutex_destroy(&data->sources_mutex);
-	pthread_mutex_destroy(&data->outputs_mutex);
+	pthread_mutex_destroy(&data->priv_stream_mutex);
 	pthread_mutex_destroy(&data->services_mutex);
-	pthread_mutex_destroy(&data->formats_mutex);
 	pthread_mutex_destroy(&data->devices_mutex);
 
 	if (data->private_data) {
 		mgw_data_release(data->private_data);
+		data->private_data = NULL;
 		data->valid = false;
 	}
 }
@@ -226,22 +217,17 @@ void mgw_shutdown(void)
 	da_free(mgw->format_types);
 	da_free(mgw->output_types);
 	da_free(mgw->service_types);
+	da_free(mgw->modules);
 
 	destroy_all_services();
-	destroy_all_outputs();
-	destroy_all_sources();
-	da_free(mgw->modules);
+	mgw_stream_release_all(mgw->data.priv_streams_list);
 	free_mgw_data();
 
-	core = mgw;
-	mgw = NULL;
-
-	bfree(core);
+	bfree(mgw);
 }
 
 /* get every type of operation and change reference */
-/* source, output, format, service, device */
-
+/* source, output, format, stream, service, device */
 static inline void *get_context_by_name(void *vfirst, const char *name,
 		pthread_mutex_t *mutex, void *(*addref)(void*))
 {
@@ -249,24 +235,22 @@ static inline void *get_context_by_name(void *vfirst, const char *name,
 	struct mgw_context_data *context;
 
 	pthread_mutex_lock(mutex);
-
 	context = *first;
 	while (context) {
-		if (!context->is_private && strcmp(context->name, name) == 0) {
-			context = addref(context);
+		if (!context->is_private &&
+			strcmp(context->obj_name, name) == 0) {
+			if (addref)
+				context = addref(context);
 			break;
 		}
 		context = context->next;
 	}
-
 	pthread_mutex_unlock(mutex);
 	return context;
 }
 
 /** ----------------------------------------------- */
 /** context data operations */
-
-/* ensures that names are never blank */
 static inline char *dup_name(const char *name, bool private)
 {
 	if (private && !name)
@@ -284,6 +268,7 @@ static inline char *dup_name(const char *name, bool private)
 }
 
 static inline bool mgw_context_data_init_wrap(
+		void					*opaque,
 		struct mgw_context_data *context,
 		enum mgw_obj_type       type,
 		mgw_data_t              *settings,
@@ -304,25 +289,27 @@ static inline bool mgw_context_data_init_wrap(
 		return false;
     */
 
-	/*context->procs = proc_handler_create();
+	context->procs = proc_handler_create(opaque);
 	if (!context->procs)
 		return false;
-    */
-    context->id			 = bstrdup(mgw_data_get_string(settings, "id"));
-	context->name        = dup_name(name, is_private);
-	context->settings    = mgw_data_newref(settings);
+
+    context->info_id	= bstrdup(mgw_data_get_string(settings, "id"));
+	context->obj_name	= dup_name(name, is_private);
+	context->settings	= mgw_data_newref(settings);
 	return true;
 }
 
 bool mgw_context_data_init(
+		void					*opaque,
 		struct mgw_context_data *context,
 		enum mgw_obj_type       type,
 		mgw_data_t              *settings,
 		const char              *name,
 		bool                    is_private)
 {
-	if (mgw_context_data_init_wrap(context, type, settings,
-                    name, is_private)) {
+	if (mgw_context_data_init_wrap(
+				opaque, context, type,
+				settings, name, is_private)) {
 		return true;
 	} else {
 		mgw_context_data_free(context);
@@ -332,14 +319,13 @@ bool mgw_context_data_init(
 
 void mgw_context_data_free(struct mgw_context_data *context)
 {
-	//mgw_hotkeys_context_release(context);
-	//signal_handler_destroy(context->signals);
-	//proc_handler_destroy(context->procs);
+	// signal_handler_destroy(context->signals);
+	proc_handler_destroy(context->procs);
 	mgw_data_release(context->settings);
 	mgw_context_data_remove(context);
 	pthread_mutex_destroy(&context->rename_cache_mutex);
-	bfree(context->name);
-	bfree(context->id);
+	bfree(context->obj_name);
+	bfree(context->info_id);
 
 	for (size_t i = 0; i < context->rename_cache.num; i++)
 		bfree(context->rename_cache.array[i]);
@@ -387,9 +373,9 @@ void mgw_context_data_setname(struct mgw_context_data *context,
 {
 	pthread_mutex_lock(&context->rename_cache_mutex);
 
-	if (context->name)
-		da_push_back(context->rename_cache, &context->name);
-	context->name = dup_name(name, context->is_private);
+	if (context->obj_name)
+		da_push_back(context->rename_cache, &context->obj_name);
+	context->obj_name = dup_name(name, context->is_private);
 
 	pthread_mutex_unlock(&context->rename_cache_mutex);
 }
@@ -415,37 +401,63 @@ static inline void *mgw_device_addref_safe_(void *ref)
 {
 	return mgw_device_get_ref(ref);
 }
+static inline void *mgw_stream_addref_safe_(void *ref)
+{
+	return mgw_stream_get_ref(ref);
+}
 
 static inline void *mgw_id_(void *data)
 {
 	return data;
 }
 
-mgw_source_t *mgw_get_source_by_name(const char *name)
+mgw_output_t *mgw_get_output_by_name(mgw_output_t *output_list,
+						pthread_mutex_t *mutex, const char *name)
 {
-	if (!mgw) return NULL;
-	return get_context_by_name(&mgw->data.first_source, name,
-			&mgw->data.sources_mutex, mgw_source_addref_safe_);
+	if (!output_list || !name) return NULL;
+	return get_context_by_name(&output_list,
+			name, mutex, mgw_output_addref_safe_);
 }
 
-mgw_output_t *mgw_get_output_by_name(const char *name)
+mgw_output_t *mgw_get_weak_output_by_name(mgw_output_t *output_list,
+						pthread_mutex_t *mutex, const char *name)
 {
-	if (!mgw) return NULL;
-	return get_context_by_name(&mgw->data.first_output, name,
-			&mgw->data.outputs_mutex, mgw_output_addref_safe_);
+	if (!output_list || !name) return NULL;
+	return get_context_by_name(&output_list, name, mutex, NULL);
 }
 
 mgw_service_t *mgw_get_service_by_name(const char *name)
 {
 	if (!mgw) return NULL;
-	return get_context_by_name(&mgw->data.first_service, name,
+	return get_context_by_name(&mgw->data.services_list, name,
 			&mgw->data.services_mutex, mgw_service_addref_safe_);
+}
+
+mgw_stream_t *mgw_get_priv_stream_by_name(const char *name)
+{
+	if (!mgw) return NULL;
+	return get_context_by_name(&mgw->data.priv_streams_list, name,
+			&mgw->data.devices_mutex, mgw_stream_addref_safe_);
+}
+
+mgw_stream_t *mgw_get_stream_by_name(mgw_stream_t *stream_list,
+						pthread_mutex_t *mutex, const char *name)
+{
+	if (!stream_list || !name) return NULL;
+	return get_context_by_name(&stream_list, name, mutex, mgw_stream_addref_safe_);
+}
+
+mgw_stream_t *mgw_get_weak_stream_by_name(mgw_stream_t *stream_list,
+						pthread_mutex_t *mutex, const char *name)
+{
+	if (!stream_list || !name) return NULL;
+	return get_context_by_name(&stream_list, name, mutex, NULL);
 }
 
 mgw_device_t *mgw_get_device_by_name(const char *name)
 {
 	if (!mgw) return NULL;
-	return get_context_by_name(&mgw->data.first_device, name,
+	return get_context_by_name(&mgw->data.devices_list, name,
 			&mgw->data.devices_mutex, mgw_device_addref_safe_);
 }
 
@@ -465,6 +477,25 @@ bool mgw_get_format_info(struct mgw_format_info *mfi)
     return false;
 }
 
+proc_handler_t *mgw_source_get_procs(void *source)
+{
+	return source ? ((mgw_source_t*)source)->context.procs : NULL;
+}
+
+proc_handler_t *mgw_output_get_procs(void *output)
+{
+	return output ? ((mgw_output_t*)output)->context.procs : NULL;
+}
+
+proc_handler_t *mgw_stream_get_procs(void *stream)
+{
+	return stream ? ((mgw_stream_t*)stream)->context.procs : NULL;
+}
+proc_handler_t *mgw_device_get_procs(void *device)
+{
+	return device ? ((mgw_device_t*)device)->context.procs : NULL;
+}
+
 /** Sources */
 mgw_data_t *mgw_save_source(mgw_source_t *source)
 {
@@ -476,7 +507,8 @@ mgw_source_t *mgw_load_source(mgw_data_t *data)
     return NULL;
 }
 
-void mgw_laod_sources(mgw_data_array_t *array, mgw_load_source_cb cb, void *private_data)
+void mgw_laod_sources(mgw_data_array_t *array,
+			mgw_load_source_cb cb, void *private_data)
 {
 
 }
@@ -497,7 +529,8 @@ mgw_output_t *mgw_load_output(mgw_data_t *data)
     return NULL;
 }
 
-void mgw_load_outputs(mgw_data_array_t *array, mgw_load_output_cb cb, void *private_data)
+void mgw_load_outputs(mgw_data_array_t *array,
+			mgw_load_output_cb cb, void *private_data)
 {
 
 }

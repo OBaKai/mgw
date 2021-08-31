@@ -9,6 +9,7 @@
 #include "util/dstr.h"
 #include "util/bmem.h"
 #include "util/base.h"
+#include "util/tlog.h"
 #include "util/threading.h"
 
 #include "libavformat/avformat.h"
@@ -58,7 +59,7 @@ struct ff_demux {
 static int stream_interrupt(void *opaque)
 {
 	struct ff_demux *demux = opaque;
-	blog(MGW_LOG_INFO, "Received a interrupt callback from ffmpeg");
+	tlog(TLOG_DEBUG, "Received a interrupt callback from ffmpeg");
 	return 0;
 }
 

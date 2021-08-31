@@ -16,7 +16,7 @@
 
 struct ring_buffer {
 	bool            sort;
-	volatile long   ref;
+	volatile long   refs;
 	BuffContext     *bc;
 	mgw_data_t      *settings;
 	void            *sort_list;
@@ -43,7 +43,7 @@ static int datacallback(void *puser, sc_sortframe *oframe)
             oframe->frame_len, oframe->timestamp, oframe->frametype, oframe->priority);
 }
 
-void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
+void *mgw_rb_create(mgw_data_t *settings, void *source)
 {
     struct ring_buffer *rb = bzalloc(sizeof(struct ring_buffer));
     rb->settings = mgw_data_newref(settings);
@@ -63,8 +63,8 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
     rb->sort = mgw_data_get_bool(rb->settings, "sort");
     size_t min_delay = mgw_data_get_int(rb->settings, "min_delay");
     size_t max_delay = mgw_data_get_int(rb->settings, "max_delay");
-    const char *name = mgw_data_get_string(rb->settings, "name");
-    const char *id = mgw_data_get_string(rb->settings, "id");
+    const char *name = mgw_data_get_string(rb->settings, "stream_name");
+    const char *id = mgw_data_get_string(rb->settings, "info_id");
 
     rb->bc = CreateStreamBuff(mgw_data_get_int(rb->settings, "mem_size"),
                             name,id,
@@ -72,7 +72,7 @@ void *mgw_rb_create(mgw_data_t *settings, struct source_param *param)
                             mgw_data_get_bool(rb->settings, "heap_mem"),
                             io,
                             mgw_data_get_bool(rb->settings, "read_by_time"),
-                            (void *)param);
+                            (void *)source);
     if (!rb->bc)
         goto error;
 
@@ -141,12 +141,16 @@ void mgw_rb_destroy(void *data)
 
 void mgw_rb_addref(void *data)
 {
-
+    struct ring_buffer *rb = data;
+    if (data)
+        os_atomic_inc_long(&rb->refs);
 }
 
 void mgw_rb_release(void *data)
 {
-
+    struct ring_buffer *rb = data;
+    if (data && (os_atomic_dec_long(&rb->refs) == -1))
+        mgw_rb_destroy(data);
 }
 
 size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet)
@@ -211,61 +215,4 @@ int mgw_rb_read_packet(void *data, struct encoder_packet *packet)
 
     packet->size = read_size;
     return read_size;
-}
-
-mgw_data_t *mgw_rb_get_encoder_settings(void *data)
-{
-	struct ring_buffer *rb = data;
-	SmemoryHead *shared_head = NULL;
-	struct source_param *param = NULL;
-
-	if (!rb)
-		return NULL;
-
-	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
-	param = shared_head->priv_data;
-	if (!param || !param->source_settings){
-		blog(MGW_LOG_INFO, "Tried to get encoder settings but source is NULL\n");
-		return NULL;
-	}
-
-	return param->source_settings(param->source);
-}
-
-size_t mgw_rb_get_video_header(void *data, uint8_t **header)
-{
-	struct ring_buffer *rb = data;
-	SmemoryHead *shared_head;
-	struct source_param *param;
-
-	if (!rb || !header)
-		return 0;
-
-	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
-    param = shared_head->priv_data;
-	if (!param || !param->video_header) {
-        blog(MGW_LOG_INFO, "Tried to get encoder video header but source is NULL\n");
-        return 0;
-    }
-
-	return param->video_header(param->source, header);
-}
-
-size_t mgw_rb_get_audio_header(void *data, uint8_t **header)
-{
-    struct ring_buffer *rb = data;
-	SmemoryHead *shared_head;
-    struct source_param *param;
-
-	if (!rb || !header)
-		return 0;
-
-	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
-    param = shared_head->priv_data;
-	if (!param || !param->audio_header) {
-        blog(MGW_LOG_INFO, "Tried to get encoder audio header but source is NULL\n");
-        return 0;
-    }
-
-	return param->audio_header(param->source, header);
 }
