@@ -68,10 +68,14 @@ msg_status Message::Register(const std::string &configPath)
 
 	if (configPath.empty())
 		return msg_status::MSG_STATUS_PARMER_INVALID;
+	if (registered_)
+		return msg_status::MSG_STATUS_EXISTED;
 
 	if (!(settings_ = mgw_data_create_from_json_file(configPath.data()))) {
-		std::cout << "Configuration apth:" << configPath << " invalid, please check!" << std::endl;
-		return msg_status::MSG_STATUS_BAD_PATH;
+		if (!(settings_ = mgw_data_create_from_json(configPath.data()))) {
+			std::cout << "Configuration :" << configPath << " invalid, please check!" << std::endl;
+			return msg_status::MSG_STATUS_BAD_PATH;
+		}
 	}
 
 	/**< Get configuration from file */

@@ -79,22 +79,27 @@ size_t mgw_get_aaclc_flv_header(
 size_t mgw_aac_add_adts(uint32_t samplerate, int profile,
 		uint32_t channels, size_t size, uint8_t *data, uint8_t *out)
 {
+#define AAC_HEADER_SIZE	7
 	if (!data) return -1;
 
 	// int profile = 2; // AAC LC
 	uint8_t freqIdx = get_samplerate_index(samplerate);
 
-	// fill in ADTS data
-	out[0] = (uint8_t) 0xFF;
-	out[1] = (uint8_t) 0xF9;
+	/**< adts fixed header */
+	out[0] = (uint8_t) 0xFF;	//syncword(12bits), out[0] -> 8bits value 0xff
+	out[1] = (uint8_t) 0xF1;	//syncword(4/12bits, f) + ID(1bit, 0) + Layer(2bits, 00) + protection_absent(1bit, 1)
+	//Profile_ObjectType(2bits) + sampling_frequency_index(4bits) + private_bit(1) + channel_configuration(1/3bit)
 	out[2] = (uint8_t) (((profile - 1) << 6) + (freqIdx << 2) + (channels >> 2));
-	out[3] = (uint8_t) (((channels & 3) << 6) + (size >> 11));
-	out[4] = (uint8_t) ((size & 0x7FF) >> 3);
-	out[5] = (uint8_t) (((size & 7) << 5) + 0x1F);
-	out[6] = (uint8_t) 0xFC;
+	//channel_configuration(2/3bits) + original_copy(1bit) + home(1bit) + Emphasis(2bits) + size(2/13)
+	out[3] = (uint8_t) (((channels & 7) << 6) + ((AAC_HEADER_SIZE + size) >> 11));
 
-	memcpy(out + 7, data, size);
-	return size + 7;
+	/**< adts variable header */
+	out[4] = (uint8_t) ((AAC_HEADER_SIZE + size) >> 3);	//size(8/13bits)
+	out[5] = (uint8_t) ((((AAC_HEADER_SIZE + size) & 7) << 5) + 0x1F);	//size(3/13bits) + 0x7ff status(5/11bits)
+	out[6] = (uint8_t) 0xFC;	//0x7ff status(8/11bits)
+
+	memcpy(out + AAC_HEADER_SIZE, data, size);
+	return size + AAC_HEADER_SIZE;
 }
 
 size_t mgw_aac_leave_adts(uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size)
@@ -421,4 +426,14 @@ size_t mgw_parse_hevc_header(uint8_t **header, uint8_t *data, size_t size)
 
 
 	return header_size;
+}
+
+const char *mgw_get_vcodec_id(encoder_id_t id)
+{
+	switch (id) {
+		case ENCID_AAC: return "mp4a";
+		case ENCID_H264: return "avc1";
+		case ENCID_HEVC: return "hev1";
+		default: return NULL;
+	}
 }

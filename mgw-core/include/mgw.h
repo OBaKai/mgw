@@ -199,6 +199,10 @@ bool mgw_device_send_packet(mgw_device_t *device,
 						const char *stream_name,
 						struct encoder_packet *packet);
 
+
+int mgw_reset_streams(mgw_device_t *device, mgw_data_t *stream_settings);
+int mgw_reset_all(void);
+
 #ifdef __cplusplus
 };
 #endif

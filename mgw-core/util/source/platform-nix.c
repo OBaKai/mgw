@@ -27,6 +27,7 @@
 #include <glob.h>
 #include <signal.h>
 #include <inttypes.h>
+#include <linux/limits.h>
 
 
 #if !defined(__APPLE__)
@@ -1001,4 +1002,26 @@ void log_system_info(void)
 	log_memory_info();
 	/** kernel version */
 	log_kernel_version();
+}
+
+const char *os_get_exec_path(void)
+{
+	char pathname[PATH_MAX];
+	if (readlink("/proc/self/exe", pathname, PATH_MAX) > 0) {
+		char *end = strrchr(pathname, '/');
+		if (end) *end = '\0';
+		return bstrdup(pathname);
+	}
+	return NULL;
+}
+
+const char *os_get_process_name(void)
+{
+	char pathname[PATH_MAX];
+	if (readlink("/proc/self/exe", pathname, PATH_MAX) > 0) {
+		char *end = strrchr(pathname, '/');
+		if (end) end++;
+		return bstrdup(end);
+	}
+	return NULL;
 }

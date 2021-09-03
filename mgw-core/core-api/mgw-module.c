@@ -1,6 +1,5 @@
 #include "mgw-internal.h"
 #include "mgw-module.h"
-
 #include "util/darray.h"
 
 /* ---------------------------------- */
@@ -57,6 +56,7 @@ void mgw_load_all_modules(struct mgw_core *core)
 	mgw_module_check_and_load_necessary_val(\
 			&formats_module,(struct darray*)&core->modules,\
 			(struct darray*)&core->format_types, sizeof(struct mgw_format_info));
+	/* Services */
 }
 
 mgw_module_t *mgw_find_module(struct mgw_core *core, const char *name)

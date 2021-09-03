@@ -50,7 +50,8 @@ static inline void get_header_internal(mgw_source_t *source,
 			call_params_t *params, enum encoder_type type)
 {
 	if (source->context.info_impl && !source->is_private) {
-		params->out_size = source->info.get_extra_data(type, &params->out);
+		params->out_size = source->info.get_extra_data(
+						source->context.info_impl, type, &params->out);
 
 	} else if (source->is_private) {
 		if (ENCODER_VIDEO == type) {
@@ -142,7 +143,7 @@ static bool mgw_source_init(struct mgw_source *source)
 			mgw_data_set_string(buf_settings, "io_mode", "write");
 			mgw_data_set_string(buf_settings, "stream_name",
 						source->parent_stream->context.obj_name);
-			mgw_data_set_string(buf_settings, "info_id", source->context.info_id);
+			mgw_data_set_string(buf_settings, "user_id", source->context.obj_name);
 		}
 
 		if (!(source->buffer = mgw_rb_create(buf_settings, source))) {
@@ -218,13 +219,14 @@ static mgw_source_t *mgw_source_create_internal(
 			mgw_data_erase(source->context.settings, "meta");
 
 		mgw_data_set_obj(source->context.settings, "meta", meta_settings);
+		mgw_data_release(meta_settings);
 
 		uint8_t *header = NULL;
-		size_t size = source->info.get_extra_data(ENCODER_VIDEO, &header);
+		size_t size = source->info.get_extra_data(source->context.info_impl, ENCODER_VIDEO, &header);
 		bmem_copy(&source->video_header, (const char *)header, size);
 		bfree(header);
 
-		size = source->info.get_extra_data(ENCODER_AUDIO, &header);
+		size = source->info.get_extra_data(source->context.info_impl, ENCODER_AUDIO, &header);
 		bmem_copy(&source->video_header, (const char *)header, size);
 		bfree(header);
 	}
@@ -261,11 +263,12 @@ mgw_source_t *mgw_source_create(struct mgw_stream *stream,
 {
 	const char *info_id;
 	const char *protocol = mgw_data_get_string(settings, "protocol");
-	if (!protocol) {
-		if (!(protocol = mgw_data_get_string(settings, "uri")))
+	if (!(*protocol)) {
+		protocol = mgw_data_get_string(settings, "uri");
+		if (!(*protocol))
 			info_id = PRIVATE_SOURCE;
 	}
-	if (protocol)
+	if (*protocol)
 		info_id = get_source_id(protocol);
 
 	return mgw_source_create_internal(stream, info_id, source_name, settings);
@@ -365,8 +368,7 @@ void mgw_source_write_packet(mgw_source_t *source, struct encoder_packet *packet
 			}
 		}
 	}
-
-	mgw_rb_write_packet(source->buffer, &packet);
+	mgw_rb_write_packet(source->buffer, packet);
 }
 
 void mgw_source_update_settings(mgw_source_t *source, mgw_data_t *settings)
@@ -395,7 +397,7 @@ bool mgw_source_start(struct mgw_source *source)
 
 	os_atomic_set_bool(&source->actived, true);
 	if (source->context.info_impl)
-		source->actived = source->info.start(source);
+		source->actived = source->info.start(source->context.info_impl);
 
 	return mgw_source_active(source);
 }
@@ -409,7 +411,7 @@ void mgw_source_stop(struct mgw_source *source)
 		return;
 
 	if (source->actived && source->context.info_impl){
-		source->info.stop(source);
+		source->info.stop(source->context.info_impl);
 		os_event_signal(source->stopping_event);
 		source->stop_code = 0;
 	}

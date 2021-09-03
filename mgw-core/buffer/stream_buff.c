@@ -225,6 +225,7 @@ int PutOneFrameToBuff(BuffContext *pcontext, uint8_t *pframe, uint32_t framelen,
 		_printd("Invalid parameter");
 		return -1;
 	}
+
 	SmemoryHead *phead = (SmemoryHead *)pcontext->position.pstuHead;
 	SmemoryFrame *pstuFrames = (SmemoryFrame *)pcontext->position.pstuFrames;
 	char *pstart_addr = pcontext->position.pstuData;

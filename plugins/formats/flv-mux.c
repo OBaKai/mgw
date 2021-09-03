@@ -57,6 +57,7 @@ static bool build_flv_meta_data(mgw_data_t *settings,
 	enc_num_val(&enc, end, "duration", 0.0);
 	enc_num_val(&enc, end, "fileSize", 0.0);
 #ifdef SEND_VIDEO
+	printf("---------------->>> width:%d\n", mgw_data_get_int(settings, "width"));
 	enc_str_val(&enc, end, "videocodecid",  	"avc1");
     enc_num_val(&enc, end, "width",     		mgw_data_get_int(settings, "width"));
     enc_num_val(&enc, end, "height",    		mgw_data_get_int(settings, "height"));
@@ -65,6 +66,7 @@ static bool build_flv_meta_data(mgw_data_t *settings,
 #endif
 #ifdef SEND_AUDIO
 	long long channels = mgw_data_get_int(settings, "channels");
+	printf("-------------------->> channels:%d\n", channels);
 	enc_str_val(&enc, end, "audiocodecid",      "mp4a");
 	enc_num_val(&enc, end, "audiodatarate",     mgw_data_get_int(settings, "abps"));  //kbps
     enc_num_val(&enc, end, "audiosamplerate",   mgw_data_get_int(settings, "samplerate"));
@@ -74,7 +76,7 @@ static bool build_flv_meta_data(mgw_data_t *settings,
     	enc_bool_val(&enc, end, "stereo", false);
 	else if (SPEAKERS_STEREO == channels)
 		enc_bool_val(&enc, end, "stereo", true);
-#endif	
+#endif
 	enc_str_val(&enc, end, "encoder", "ucast rtmp module");
 	
 	*enc++  = 0;

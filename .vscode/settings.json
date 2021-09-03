@@ -95,6 +95,8 @@
 		"ff-demuxing.h": "c",
 		"message-def.h": "c",
 		"dstr.h": "c",
-		"callback-handle.h": "c"
+		"callback-handle.h": "c",
+		"queue": "cpp",
+		"thread": "c"
 	}
 }

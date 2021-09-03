@@ -226,6 +226,90 @@ void mgw_shutdown(void)
 	bfree(mgw);
 }
 
+int mgw_reset_streams(mgw_device_t *device, mgw_data_t *stream_settings)
+{
+	if (!stream_settings) return -1;
+
+	int16_t ret = 0;
+	const char *stream_name = mgw_data_get_string(stream_settings, "name");
+	mgw_stream_t *stream = mgw_stream_create(device, stream_name, stream_settings);
+
+	mgw_data_t *source_settings = mgw_data_get_obj(stream_settings, "source");
+	if (source_settings) {
+		if ((ret = mgw_stream_add_source(stream, source_settings)))
+			tlog(TLOG_ERROR, "Tried to add source to stream:%s failed!\n", stream_name);
+
+		mgw_data_release(source_settings);
+	}
+
+	/**< create all outputs! */
+	mgw_data_array_t *outputs_settings = mgw_data_get_array(stream_settings, "outputs");
+	if (outputs_settings) {
+		size_t outputs_cnt = mgw_data_array_count(outputs_settings);
+		for (int i = 0; i < outputs_cnt; i++) {
+			mgw_data_t *output_settings = mgw_data_array_item(outputs_settings, i);
+			if (output_settings) {
+				if ((ret = mgw_stream_add_output(stream, output_settings)))
+					tlog(TLOG_ERROR, "Tried to add output to stream:%s failed!\n", stream_name);
+
+				mgw_data_release(output_settings);
+			}
+		}
+		mgw_data_array_release(outputs_settings);
+	}
+
+	return 0;
+}
+
+int mgw_reset_all(void)
+{
+	if (!mgw) return -1;
+
+	int ret = 0;
+	struct mgw_core *core = mgw;
+	mgw_data_array_t *devices = mgw_data_get_array(core->data.private_data, "devices");
+	if (devices) {
+		size_t devices_cnt = mgw_data_array_count(devices);
+		for (int i = 0; i < devices_cnt; i++) {
+			mgw_data_t *dev = mgw_data_array_item(devices, i);
+			/** create device */
+			const char *type = mgw_data_get_string(dev, "type");
+			const char *sn = mgw_data_get_string(dev, "sn");
+			mgw_device_t *dev_impl = mgw_device_create(type, sn, dev);
+			mgw_data_array_t *streams = mgw_data_get_array(dev, "streams");
+			if (streams) {
+				size_t streams_cnt = mgw_data_array_count(streams);
+				for (int j = 0; j < streams_cnt; j++) {
+					mgw_data_t *stream = mgw_data_array_item(streams, i);
+
+					// mgw_device_add_stream(dev_impl, stream);
+
+					if (0 != (ret = mgw_reset_streams(dev_impl, stream)))
+						tlog(TLOG_INFO, "Tried to reset stream:%s "\
+								"failed, ret:%d\n", mgw_data_get_string(stream, "name"), ret);
+					mgw_data_release(stream);;
+				}
+			}
+			mgw_data_array_release(streams);
+			mgw_data_release(dev);
+		}
+		mgw_data_array_release(devices);
+	}
+
+	/**< Reset all private streams */
+	mgw_data_array_t *private_streams = mgw_data_get_array(core->data.private_data, "private_streams");
+	if (private_streams) {
+		int streams_cnt = mgw_data_array_count(private_streams);
+		for (int i = 0; i < streams_cnt; i++) {
+			mgw_data_t *stream = mgw_data_array_item(private_streams, i);
+			if (0 != (ret = mgw_reset_streams(NULL, stream)))
+				tlog(TLOG_INFO, "Tried to reset stream:%s "\
+						"failed, ret:%d\n", mgw_data_get_string(stream, "name"), ret);
+		}
+	}
+	return ret;
+}
+
 /* get every type of operation and change reference */
 /* source, output, format, stream, service, device */
 static inline void *get_context_by_name(void *vfirst, const char *name,

@@ -42,7 +42,7 @@ LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats -lmgw-thirdparty \
 
 endif
 
-TARGET = mgw.out
+TARGET = mgw
 TARGET_TYPE = "app"
 
 include $(PROJECT_ROOT_PATH)/compile_rules.mk

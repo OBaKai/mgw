@@ -206,7 +206,7 @@ static void *demuxing_thread(void *arg)
 		return NULL;
 
 	AVPacket video_pkt;
-	char aac_buf[32] = {};
+	char aac_buf[256*1024] = {};
     int64_t ts_ms = 0, last_ts = 0, sleep_ms = 0;
 
 	av_init_packet(&video_pkt);
@@ -263,7 +263,7 @@ static void *demuxing_thread(void *arg)
 				packet.dts = ts_ms * 1000;
 				packet.data = demux->pkt.data;
 
-				demux->proc_packet(demux->param, &packet);
+				// demux->proc_packet(demux->param, &packet);
 
 				sleep_ms = packet.pts - last_ts;
 				if (sleep_ms < 0)
@@ -273,9 +273,13 @@ static void *demuxing_thread(void *arg)
 
 				/** filter the stream if save to file */
 				if (demux->aac_file) {
-					size_t out_size = aac_add_adts_header(demux->pkt.size, aac_buf);
+					size_t out_size = mgw_aac_add_adts(demux->audio->codecpar->sample_rate,
+													demux->audio->codecpar->profile,
+													demux->audio->codecpar->channels,
+													packet.size,
+													packet.data,
+													aac_buf);
 					fwrite(aac_buf, out_size, 1, demux->aac_file);
-					fwrite(packet.data, packet.size, 1, demux->aac_file);
 				}
 
 				av_packet_unref(&demux->pkt);

@@ -735,8 +735,8 @@ int PutFrameStreamSort(void **agrv, sc_sortframe *piframe)
 	unsigned long long alatime = 0;
 	if(iframe->frame_len >= (ssbuf->datasize/2))
 	{
-		_printd("buff_name=%s, userid=%s; the freame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
-		blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; the freame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
+		_printd("buff_name=%s, userid=%s; the frame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
+		blog(MGW_LOG_ERROR, "buff_name=%s, userid=%s; the frame is too big, len=%d/%d", ssbuf->name.array, ssbuf->userid.array, iframe->frame_len, ssbuf->datasize);
 		return -1;
 	}
 

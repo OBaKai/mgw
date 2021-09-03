@@ -14,6 +14,7 @@
 #define MGW_FF_SRC_NAME		"ffmpeg_source"
 #define VBSF_H264			"h264_mp4toannexb"
 #define VBSF_HEVC			"hevc_mp4toannexb"
+#define ABSF_AAC			"aac_adtstoasc"
 
 #define ERROR_READ_THRESHOLD	3
 
@@ -31,12 +32,14 @@ struct ffmpeg_source {
 
 	mgw_data_t			*setting;
 	struct dstr			uri;
+	struct dstr			username, password;
 
 	bool				is_local_file;
 	bool				is_looping;
 
 	int					sws_width, sws_height;
 	int					audio_index, video_index;
+	double				framerate;
 	AVFormatContext		*fmt_ctx;
 	AVStream			*vst, *ast;
 	AVBSFContext		*vbsf_ctx;
@@ -76,10 +79,10 @@ void ffmpeg_log_callback(void *opaque, int level, const char *fmt, va_list arg)
 		case AV_LOG_DEBUG:		level = TLOG_DEBUG;	break;
 		default: if (level < AV_LOG_FATAL) level = TLOG_FATAL; break;
 	}
-	static char buffer[1024] = {};
+	static char buffer[4096] = {};
 	memset(buffer, 0, sizeof(buffer));
 	vsnprintf(buffer, sizeof(buffer), fmt, arg);
-	tlog(level, "%s\n", buffer);
+	// tlog(level, "%s", buffer);
 }
 
 /**< Initialize ffmpeg all environment*/
@@ -124,8 +127,14 @@ static void ffmpeg_source_destroy(void *data)
 	os_event_destroy(s->continue_read_event);
 	if (s->setting)
 		mgw_data_release(s->setting);
+
 	if (!dstr_is_empty(&s->uri))
 		dstr_free(&s->uri);
+	if (!dstr_is_empty(&s->username))
+		dstr_free(&s->username);
+	if (!dstr_is_empty(&s->password))
+		dstr_free(&s->password);
+
 	if (s->video_file)
 		fclose(s->video_file);
 	if (s->audio_file)
@@ -136,7 +145,7 @@ static void ffmpeg_source_destroy(void *data)
 static int ffmpeg_interrupt_callback(void *opaque)
 {
 	struct ffmpeg_source *s = opaque;
-	tlog(TLOG_DEBUG, "Received a ffmpeg interrupt!\n");
+	tlog(TLOG_DEBUG, "Received a ffmpeg interrupt!");
 	return 0;
 }
 
@@ -149,21 +158,29 @@ static int create_ffmpeg_media(struct ffmpeg_source *s, const char *uri)
 	if ((ret = avformat_find_stream_info(s->fmt_ctx, NULL)))
 		goto error;
 
+	av_dump_format(s->fmt_ctx, 0, s->uri.array, 0);
+
 	if ((ret = av_find_best_stream(s->fmt_ctx,
 				AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0)) < 0)
 		goto error;
-	if (AV_CODEC_ID_AAC != s->ast->codecpar->codec_id) {
-		tlog(TLOG_ERROR, "Couldn't support this audio codec:%d\n", s->ast->codecpar->codec_id);
-		goto error;
-	}
 
 	s->audio_index = ret;
 	s->ast = s->fmt_ctx->streams[ret];
 	if (s->save_to_file && !s->audio_file)
-		s->audio_file = fopen("source.aac", "wb+");
+		s->audio_file = fopen("audio_source.aac", "wb+");
+	if (AV_CODEC_ID_AAC != s->ast->codecpar->codec_id) {
+		tlog(TLOG_ERROR, "Couldn't support this audio codec:%d", s->ast->codecpar->codec_id);
+		goto error;
+	}
+
+	tlog(TLOG_INFO, "Audio stream codec:0x%x, sample_rate:%d Hz, "\
+					"channels:%d, bits_per_sample:%d bits, bit_rate:%"PRId64" kb/s",
+					s->ast->codecpar->codec_id, s->ast->codecpar->sample_rate,
+					s->ast->codecpar->channels, s->ast->codecpar->bits_per_coded_sample,
+					s->ast->codecpar->bit_rate / 1000);
 
 	if ((ret = av_find_best_stream(s->fmt_ctx,
-				AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)))
+				AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0)
 		goto error;
 
 	s->video_index = ret;
@@ -184,10 +201,13 @@ static int create_ffmpeg_media(struct ffmpeg_source *s, const char *uri)
 		snprintf(filename, sizeof(filename), "video_source.%s", v_ext);
 		s->video_file = fopen(filename, "wb+");
 	}
+	tlog(TLOG_INFO, "Found video stream, codec:%d, width:%d, height:%d, bit_rate:%"PRId64" kb/s",
+						s->vst->codecpar->codec_id, s->vst->codecpar->width,
+						s->vst->codecpar->height, s->vst->codecpar->bit_rate);
 
 	const AVBitStreamFilter *vbsf = av_bsf_get_by_name(vbsf_type);
 	if ((ret = av_bsf_alloc(vbsf, &s->vbsf_ctx) < 0)) {
-		tlog(TLOG_ERROR, "Tried to alloc bsf:%s failed!\n", vbsf_type);
+		tlog(TLOG_ERROR, "Tried to alloc bsf:%s failed!", vbsf_type);
 		goto error;
 	}
 	ret = avcodec_parameters_copy(s->vbsf_ctx->par_in, s->vst->codecpar);
@@ -218,13 +238,14 @@ static void *ffmpeg_source_create(mgw_data_t *setting, mgw_source_t *source)
 
 	s->save_to_file = mgw_data_get_bool(setting, "save_file");
 	const char *uri = mgw_data_get_string(setting, "uri");
+	s->save_to_file = true;
 	if (!uri) {
-		tlog(TLOG_DEBUG, "couldn't find uri!\n");
+		tlog(TLOG_DEBUG, "couldn't find uri!");
 		goto error;
 	}
 
 	if (0 != create_ffmpeg_media(s, uri)) {
-		tlog(TLOG_ERROR, "Open uri:%s failed, error:%s\n", av_err2str(ret));
+		tlog(TLOG_ERROR, "Open uri:%s failed, error:%s", uri, av_err2str(ret));
 		goto error;
 	}
 
@@ -242,6 +263,7 @@ static void *read_thread(void *arg)
 	AVPacket pkt = {}, bsf_pkt = {};
 	int ret;
 	char *audio_buffer = bzalloc(AAC_SAMPLE_SIZE_MAX);
+	uint32_t frame_cnt = 0;
 
 	while (actived(s)) {
 		if (stopping(s))
@@ -260,6 +282,7 @@ static void *read_thread(void *arg)
 			continue;
 		}
 
+		frame_cnt++;
 		if (s->video_index == pkt.stream_index) {
 			if (s->vbsf_ctx && 0 == av_bsf_send_packet(s->vbsf_ctx, &pkt)) {
 				while (0 == av_bsf_receive_packet(s->vbsf_ctx, &bsf_pkt)) {
@@ -267,17 +290,17 @@ static void *read_thread(void *arg)
 						fwrite(bsf_pkt.data, bsf_pkt.size, 1, s->video_file);
 						fflush(s->video_file);
 					}
-					tlog(TLOG_DEBUG, "write video data! size = %d, data[0]:%02x, "\
-								"data[1]:%02x, data[2]:%02x, data[3]:%02x, data[4]:%02x",
-								bsf_pkt.size, bsf_pkt.data[0], bsf_pkt.data[1], \
-								bsf_pkt.data[2], bsf_pkt.data[3], bsf_pkt.data[4]);
+					// tlog(TLOG_DEBUG, "write video data! pts = %"PRId64" size = %d, data[0]:%02x, "\
+					// 			"data[1]:%02x, data[2]:%02x, data[3]:%02x, data[4]:%02x",
+					// 			bsf_pkt.pts, bsf_pkt.size, bsf_pkt.data[0], bsf_pkt.data[1], \
+					// 			bsf_pkt.data[2], bsf_pkt.data[3], bsf_pkt.data[4]);
 
 					packet.type = ENCODER_VIDEO;
 					packet.keyframe = mgw_avc_keyframe(bsf_pkt.data, bsf_pkt.size);
 					packet.size = bsf_pkt.size;
 					packet.data = bsf_pkt.data;
 					packet.pts = packet.dts = (bsf_pkt.pts == AV_NOPTS_VALUE) ?
-									NAN : bsf_pkt.pts * av_q2d(s->vst->time_base) * 1000000;
+									NAN : bsf_pkt.dts * av_q2d(s->vst->time_base) * 1000000;
 					s->source->output_packet(s->source, &packet);
 					av_packet_unref(&bsf_pkt);
 				}
@@ -289,17 +312,25 @@ static void *read_thread(void *arg)
 			packet.size = mgw_aac_add_adts(s->ast->codecpar->sample_rate,
 							s->ast->codecpar->profile, s->ast->codecpar->channels,
 							pkt.size, pkt.data, audio_buffer);
-			packet.pts = packet.dts = (bsf_pkt.pts == AV_NOPTS_VALUE) ?
-							NAN : bsf_pkt.pts * av_q2d(s->ast->time_base) * 1000000;
+			packet.pts = packet.dts = (pkt.pts == AV_NOPTS_VALUE) ?
+							NAN : pkt.dts * av_q2d(s->ast->time_base) * 1000000;
+			if (s->audio_file) {
+				fwrite(packet.data, packet.size, 1, s->audio_file);
+				fflush(s->audio_file);
+			}
+
 			s->source->output_packet(s->source, &packet);
 			av_packet_unref(&pkt);
 		}
+
+		// if (frame_cnt % 8)
+		usleep(5 *1000);
 	}
 
 	if (os_atomic_load_bool(&s->disconnected))
-		tlog(TLOG_INFO, "Disconnected from %s \n", s->uri.array);
+		tlog(TLOG_INFO, "Disconnected from %s ", s->uri.array);
 	else
-		tlog(TLOG_INFO, "User disconnected\n");
+		tlog(TLOG_INFO, "User disconnected");
 
 	if (!stopping(s) && os_atomic_load_bool(&s->disconnected))
 		pthread_detach(s->receive_thread);
@@ -345,12 +376,12 @@ static void ffmpeg_source_stop(void *data)
 	}
 
 	/**< reset some resources */
-
+	s->framerate = 0;
 }
 
-static void ffmpeg_source_get_defaults(mgw_data_t *settings)
+static mgw_data_t *ffmpeg_source_get_defaults(void)
 {
-
+	return NULL;
 }
 
 static void ffmpeg_source_update(void *data, mgw_data_t *settings)
@@ -358,14 +389,71 @@ static void ffmpeg_source_update(void *data, mgw_data_t *settings)
 
 }
 
-static mgw_data_t *ffmpeg_source_get_settings(void *data)
+static double calc_framerate(struct ffmpeg_source *s)
 {
-    return NULL;
+	if (s->vst->avg_frame_rate.den &&
+		s->vst->avg_frame_rate.num) {
+		double d = av_q2d(s->vst->avg_frame_rate);
+		uint64_t v = lrintf(d * 100);
+		if (!v || (v % 100) || (v % (100 *100)))
+			s->framerate = d;
+		else
+			s->framerate = d / 1000;
+	}
+	return s->framerate;
 }
 
-static size_t ffmpeg_source_get_header(enum encoder_type type, uint8_t **data)
+static mgw_data_t *ffmpeg_source_get_settings(void *data)
 {
+	struct ffmpeg_source *s = data;
+	if (!ffmpeg_source_valid(s))
+		return NULL;
+	if (!s->vst || !s->ast)
+		return NULL;
 
+	mgw_data_t *meta = mgw_data_create();
+
+	/**< meta settings */
+	encoder_id_t vencid = ENCID_NONE, aencid = ENCID_NONE;
+	if (s->vst->codecpar->codec_id == AV_CODEC_ID_H264)
+		vencid = ENCID_H264;
+	else if (s->vst->codecpar->codec_id == AV_CODEC_ID_HEVC)
+		vencid = ENCID_HEVC;
+	if (s->ast->codecpar->codec_id == AV_CODEC_ID_AAC)
+		aencid = ENCID_AAC;
+
+	mgw_data_set_string(meta, "vencoderID", mgw_get_vcodec_id(vencid));
+	mgw_data_set_int(meta, "width", s->vst->codecpar->width);
+	mgw_data_set_int(meta, "height", s->vst->codecpar->height);
+	mgw_data_set_double(meta, "fps", calc_framerate(s));
+	mgw_data_set_int(meta, "vbps", s->vst->codecpar->bit_rate);
+
+	mgw_data_set_string(meta, "aencoderID", mgw_get_vcodec_id(aencid));
+	mgw_data_set_int(meta, "channels", s->ast->codecpar->channels);
+	mgw_data_set_int(meta, "samplerate", s->ast->codecpar->sample_rate);
+	mgw_data_set_int(meta, "samplesize", s->ast->codecpar->bits_per_coded_sample);
+	mgw_data_set_int(meta, "abps", s->ast->codecpar->bit_rate);
+
+	return meta;
+}
+
+static size_t ffmpeg_source_get_header(void *data, enum encoder_type type, uint8_t **header)
+{
+	struct ffmpeg_source *s = data;
+	if (!header || !ffmpeg_source_valid(s))
+		return 0;
+
+	AVStream *st = NULL;
+	if (type == ENCODER_VIDEO && s->vst)
+		st = s->vst;
+	else if (type == ENCODER_AUDIO && s->ast)
+		st = s->ast;
+	else
+		return 0;
+
+	*header = bmemdup(s->vst->codecpar->extradata,
+						s->vst->codecpar->extradata_size);
+	return s->vst->codecpar->extradata_size;
 }
 
 struct mgw_source_info ffmpeg_source_info = {

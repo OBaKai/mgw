@@ -510,12 +510,8 @@ static void *send_thread(void *data)
             continue;
         }
 
-		if (packet.type == ENCODER_VIDEO && 
-					(packet.data[0] || packet.data[1] ||
-					(packet.data[3] != 1 && packet.data[4] != 1)))
-			blog(MGW_LOG_ERROR, "Find a video frame NALU start code, "
-						"data[0]:%02x, data[1]:%02x, data[2]:%02x, data[3]:%02x, data[3]:%02x",
-						packet.data[0], packet.data[1], packet.data[2],packet.data[3],packet.data[4]);
+		// if (ENCODER_AUDIO == packet.type)
+		// 	tlog(TLOG_DEBUG, "rtmp stream receive a audio packet, size:%d", packet.size);
 
 		if (!stream->sent_headers ||
 			(FRAME_PRIORITY_LOW == packet.priority &&

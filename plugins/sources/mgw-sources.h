@@ -38,7 +38,7 @@ struct mgw_source_info {
 	mgw_data_t  *(*get_defaults)(void);
 	void        (*update)(void *data, mgw_data_t *settings);
 	mgw_data_t  *(*get_settings)(void *data);
-    size_t      (*get_extra_data)(enum encoder_type type, uint8_t **data);
+    size_t      (*get_extra_data)(void *data, enum encoder_type type, uint8_t **header);
 };
 
 #ifdef __cplusplus

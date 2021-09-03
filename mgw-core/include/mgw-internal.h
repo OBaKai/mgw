@@ -217,7 +217,7 @@ struct mgw_service {
 struct mgw_stream {
 	struct mgw_context_data		context;
 	struct mgw_ref				*control;
-	struct mgw_deveice			*parent_device;
+	struct mgw_device			*parent_device;
 
 	struct mgw_source			*source;
 	struct mgw_output			*outputs_list;

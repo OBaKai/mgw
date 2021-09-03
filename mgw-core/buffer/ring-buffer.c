@@ -63,11 +63,11 @@ void *mgw_rb_create(mgw_data_t *settings, void *source)
     rb->sort = mgw_data_get_bool(rb->settings, "sort");
     size_t min_delay = mgw_data_get_int(rb->settings, "min_delay");
     size_t max_delay = mgw_data_get_int(rb->settings, "max_delay");
-    const char *name = mgw_data_get_string(rb->settings, "stream_name");
-    const char *id = mgw_data_get_string(rb->settings, "info_id");
+    const char *stream_name = mgw_data_get_string(rb->settings, "stream_name");
+    const char *user_id = mgw_data_get_string(rb->settings, "user_id");
 
     rb->bc = CreateStreamBuff(mgw_data_get_int(rb->settings, "mem_size"),
-                            name,id,
+                            stream_name,user_id,
                             mgw_data_get_int(rb->settings, "capacity"),
                             mgw_data_get_bool(rb->settings, "heap_mem"),
                             io,
@@ -90,8 +90,8 @@ void *mgw_rb_create(mgw_data_t *settings, void *source)
         if (max_delay > 0)
             info.uiMaxSortTime = max_delay;
 
-        dstr_copy(&info.name, name);
-        dstr_copy(&info.userid, id);
+        dstr_copy(&info.name, stream_name);
+        dstr_copy(&info.userid, user_id);
 
         rb->sort_list = pCreateStreamSort(&info);
 		dstr_free(&info.name);
@@ -161,17 +161,10 @@ size_t mgw_rb_write_packet(void *data, struct encoder_packet *packet)
         return -1;
 
     frame_t frame_type;
-    if (ENCODER_VIDEO == packet->type) {
+    if (ENCODER_VIDEO == packet->type)
         frame_type = packet->keyframe ? FRAME_I : FRAME_P;
-
-		if ((packet->data[0] || packet->data[1] ||
-			(packet->data[3] != 1 && packet->data[4] != 1)))
-			tlog(TLOG_INFO, "Ring buffer find a video frame "
-						"data[0]:%02x, data[1]:%02x, data[2]:%02x, data[3]:%02x, data[3]:%02x",
-						packet->data[0], packet->data[1], packet->data[2],packet->data[3],packet->data[4]);
-    } else if (ENCODER_AUDIO == packet->type) {
+    else if (ENCODER_AUDIO == packet->type)
         frame_type = FRAME_AAC;
-    }
 
 	pthread_mutex_lock(&rb->write_mutex);
     if (rb->sort) {

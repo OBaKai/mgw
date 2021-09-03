@@ -7,6 +7,7 @@
 #ifndef TLOG_H
 #define TLOG_H
 #include <stdarg.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +39,15 @@ struct tlog_info {
     const char *func;
     int line;
     struct tlog_time time;
+};
+
+struct tlog_config {
+    bool        block;
+    bool        multiwrite;
+    int         max_size;
+    int         max_count;
+    int         buffer_size;
+    const char  *filename;
 };
 
 /*
@@ -73,7 +83,7 @@ buffsize: Buffer size, zero for default (128K)
 multiwrite: enable multi process write mode.
             NOTICE: maxlogsize in all prcesses must be same when enable this mode.
  */
-extern int tlog_init(const char *logfile, int maxlogsize, int maxlogcount, int block, int buffsize, int multiwrite);
+extern int tlog_init(struct tlog_config *configs);
 
 /* flush pending log message, and exit tlog */
 extern void tlog_exit(void);
@@ -103,7 +113,7 @@ multiwrite: enable multi process write mode.
 
 return: log stream handler.
  */
-extern tlog_log *tlog_open(const char *logfile, int maxlogsize, int maxlogcount, int block, int buffsize, int multiwrite);
+extern tlog_log *tlog_open(struct tlog_config *configs);
 
 extern void tlog_close(tlog_log *log);
 

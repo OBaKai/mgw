@@ -21,7 +21,8 @@ enum class msg_status:int {
 	MSG_STATUS_ACCESSREQ_FAILED			= -3,
 	MSG_STATUS_AUTHENREQ_FAILED			= -4,
 	MSG_STATUS_REGISTERREQ_FAILED		= -5,
-	MSG_STATUS_WSCLIENT_START_FAILED	= -6
+	MSG_STATUS_WSCLIENT_START_FAILED	= -6,
+	MSG_STATUS_EXISTED					= -7
 };
 
 class Message
@@ -34,6 +35,7 @@ public:
 
 	~Message();
 	msg_status Register(const std::string &configPath);
+	msg_status Register(mgw_data_t *settings);
 	void UnRegister(void);
 	bool Alive(void) const {return wsclient_actived(ws_client_);}
 	int SendMessage(mgw_data_t *data, int cmd);
@@ -68,10 +70,11 @@ private:
 	static void *ReceivingThread(const Message &msg);
 
     /* data */
-	mgw_data_t *settings_;
-	CURL *curl_;
-	struct user_infos *infos_;
-	void *ws_client_;
+	bool				registered_;
+	CURL				*curl_;
+	void				*ws_client_;
+	mgw_data_t			*settings_;
+	struct user_infos	*infos_;
 };
 
 #endif  //_MGW_MESSAGE_MESSAGE_H_

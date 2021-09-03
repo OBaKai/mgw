@@ -94,6 +94,8 @@ enum mgw_err_status {
 	MGW_ERR_EXISTED,		/**< Resource already existed */
 	MGW_ERR_ECREATE,
 	MGW_ERR_ESTARTING,		/**< Start a resource failed */
+	MGW_ERR_BAD_PATH,
+	MGW_ERR_EMESSAGE_REGISTER,
 };
 
 #endif  //_MGW_CORE_MGW_DEFS_H_

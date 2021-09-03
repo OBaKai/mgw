@@ -275,7 +275,7 @@ static bool mgw_output_init(struct mgw_output *output)
 		mgw_data_set_string(buf_settings, "io_mode", "read");
 		mgw_data_set_string(buf_settings, "stream_name",
 					output->parent_stream->context.obj_name);
-		mgw_data_set_string(buf_settings, "info_id", output->context.info_id);
+		mgw_data_set_string(buf_settings, "user_id", output->context.obj_name);
 		mgw_data_set_obj(output->context.settings, "buffer", buf_settings);
 	} else {
 		buf_settings = mgw_data_get_default_obj(output->context.settings, "buffer");
@@ -351,16 +351,17 @@ mgw_output_t *mgw_output_create(struct mgw_stream *stream,
 {
 	const char *info_id = NULL;
 	const char *protocol = mgw_data_get_string(settings, "protocol");
-	if (!protocol) {
-		if (!(protocol = mgw_data_get_string(settings, "uri"))) {
+	if (!(*protocol)) {
+		protocol = mgw_data_get_string(settings, "uri");
+		if (!(*protocol)) {
 			tlog(TLOG_ERROR, "Couldn't find output protocol!\n");
 			return NULL;
 		}
 	}
-	if (protocol)
+	if (*protocol)
 		info_id = get_output_id(protocol);
 
-	return mgw_output_create_internal(stream, output_name, output_name, settings);
+	return mgw_output_create_internal(stream, info_id, output_name, settings);
 }
 
 void mgw_output_destroy(struct mgw_output *output)

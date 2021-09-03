@@ -458,6 +458,7 @@ int tlog_vext(tlog_level level, const char *file, int line, const char *func, vo
         len = sprintf(buffer, "[%5s][%17s:%-4d] ", tlog_level_str[level], file, line);
         vsprintf(buffer+len, format, ap);
         fprintf(stdout, "%s", buffer);
+        return len;
 #else
         return 0;
 #endif
@@ -1173,7 +1174,7 @@ int tlog_setlevel(tlog_level level)
     return 0;
 }
 
-tlog_log *tlog_open(const char *logfile, int maxlogsize, int maxlogcount, int block, int buffsize, int multiwrite)
+tlog_log *tlog_open(struct tlog_config *configs)
 {
     struct tlog_log *log = NULL;
     char log_file[PATH_MAX];
@@ -1190,24 +1191,24 @@ tlog_log *tlog_open(const char *logfile, int maxlogsize, int maxlogcount, int bl
     }
 
     memset(log, 0, sizeof(*log));
-    log->buffsize = (buffsize > 0) ? buffsize : TLOG_BUFF_SIZE;
+    log->buffsize = (configs->buffer_size > 0) ? configs->buffer_size : TLOG_BUFF_SIZE;
     log->start = 0;
     log->end = 0;
     log->ext_end = 0;
-    log->block = (block != 0) ? 1 : 0;
+    log->block = configs->block ? 1 : 0;
     log->dropped = 0;
-    log->logsize = (maxlogsize >= 0) ? maxlogsize : TLOG_LOG_SIZE;
-    log->logcount = (maxlogcount > 0) ? maxlogcount : TLOG_LOG_COUNT;
+    log->logsize = (configs->max_size >= 0) ? configs->max_size : TLOG_LOG_SIZE;
+    log->logcount = (configs->max_count > 0) ? configs->max_count : TLOG_LOG_COUNT;
     log->fd = -1;
     log->filesize = 0;
     log->zip_pid = -1;
     log->logscreen = 0;
     log->is_exit = 0;
-    log->multi_log = (multiwrite != 0) ? 1 : 0;
+    log->multi_log = configs->multiwrite ? 1 : 0;
 
-    strncpy(log_file, logfile, PATH_MAX);
+    strncpy(log_file, configs->filename, PATH_MAX);
     strncpy(log->logdir, dirname(log_file), sizeof(log->logdir));
-    strncpy(log_file, logfile, PATH_MAX);
+    strncpy(log_file, configs->filename, PATH_MAX);
     strncpy(log->logname, basename(log_file), sizeof(log->logname));
 
     log->buff = malloc(log->buffsize);
@@ -1245,18 +1246,23 @@ void tlog_close(tlog_log *log)
     log->is_exit = 1;
 }
 
-int tlog_init(const char *logfile, int maxlogsize, int maxlogcount, int block, int buffsize, int multiwrite)
+int tlog_init(struct tlog_config *configs)
 {
     pthread_attr_t attr;
     int ret;
     struct tlog_log *log = NULL;
+
+    if (!configs) {
+        fprintf(stderr, "configurations invalid!\n");
+        return -1;
+    }
 
     if (tlog_format != NULL) {
         fprintf(stderr, "tlog already initilized.\n");
         return -1;
     }
 
-    if (buffsize > 0 && buffsize < TLOG_MAX_LINE_LEN * 2) {
+    if (configs->buffer_size > 0 && configs->buffer_size < TLOG_MAX_LINE_LEN * 2) {
         fprintf(stderr, "buffer size is invalid.\n");
         return -1;
     }
@@ -1273,7 +1279,7 @@ int tlog_init(const char *logfile, int maxlogsize, int maxlogcount, int block, i
     pthread_cond_init(&tlog.client_cond, 0);
     tlog.run = 1;
 
-    log = tlog_open(logfile, maxlogsize, maxlogcount, block, buffsize, multiwrite);
+    log = tlog_open(configs);
     if (log == NULL) {
         fprintf(stderr, "init tlog root failed.\n");
         goto errout;

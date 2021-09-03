@@ -1,121 +1,170 @@
 /**< C++ header files */
+#include "mgw-app.h"
 #include "message.h"
+#include "mgw-events.h"
 
 /**< C header files */
 extern "C" {
-#include "mgw-basic.h"
 #include "util/base.h"
 #include "util/tlog.h"
 #include "util/mgw-data.h"
+#include "util/platform.h"
 #include "formats/ff-demuxing.h"
-
 #include <stdio.h>
 #include <unistd.h>
 }
 
-/** 
- * 0.register to api and message server 
- * 1.set system config
- * 2.create stream 
- * 3.create source
- * 4.create output
- * 5.stop output
- * 6.stop source
- * 7.destroy stream
- * 8.system shutdown
- */
+// #define CONFIG_MESSAGE			1
 
-#define MGW_LOG_FILENAME	"mgw.log"
-#define MGW_LOG_FILEPATH	"./"
-#define MGW_LOG_FILELEN		1024*1024*2
-#define MGW_LOG_FILECNT		10
-#define MGW_LOG_BLOCKSIZE	1
-#define MGW_LOG_BUFFERSIZE	0
-#define MGW_LOG_MULTIWRITE	0
-
-static void *stream = NULL;
-static void *demux = NULL;
-
-void proc_packet(void *data, struct encoder_packet *packet)
+MGWApp::MGWApp():
+	started_(false)
 {
-	mgw_stream_send_private_packet(data, packet);
+
 }
 
-static int mgw_stream_cb(int cmd, void *param, size_t param_size)
+MGWApp::~MGWApp()
 {
-	return 0;
+	ExitApp();
+}
+
+bool MGWApp::Startup(const std::string &configFile)
+{
+	if (configFile.empty()) return false;
+	if (started_) return true;
+
+	mgw_data_t *config = mgw_data_create_from_json_file(configFile.data());
+	if (!mgw_startup(config)) {
+		tlog(TLOG_ERROR, "Startup mgw internal failed!\n");
+		goto error;
+	}
+	started_ = true;
+error:
+	mgw_data_release(config);
+	return started_;
+}
+
+void MGWApp::ExitApp(void)
+{
+	if (started_)
+		mgw_shutdown();
+}
+
+bool MGWApp::AttempToReset(void)
+{
+	return started_ && mgw_reset_all() == 0;
+}
+
+static void show_usage(void)
+{
+	char buffer[1024] = {}, *opts = buffer;
+	opts += sprintf(opts, "Usage: ./install/bin/mgw [options]\n");
+	opts += sprintf(opts, "Options:\n");
+	opts += sprintf(opts, "  -h              Display this help\n");
+	opts += sprintf(opts, "  -v              Display version information\n");
+	opts += sprintf(opts, "  -c filename     Specify a file to start the server\n");
+	fprintf(stdout, "%s", buffer);
+}
+
+/**< Get configuration file file name with absolute path */
+/**< Return true if normal, should run continue */
+static bool parse_options(int argc, char *argv[], char **config_file)
+{
+	if (argc < 2) {
+		fprintf(stdout, "Use default configuration file to start server\n");
+		return true;
+	}
+	if (!strncmp(argv[1], "-h", 2)) {
+		show_usage();
+		return false;
+	} else if (!strncmp(argv[1], "-v", 2)) {
+		fprintf(stdout, "%s\n", mgw_get_version_string());
+		return false;
+	} else if (!strncmp(argv[1], "-c", 2) && argc == 3) {
+		*config_file = bstrdup(argv[2]);
+		return true;
+	}
+	fprintf(stdout, "argv[1]:%s\n", argv[1]);
+	fprintf(stdout, "Error parameter, you can start with the following usage:\n");
+	show_usage();
+	return false;
+}
+
+static int events_loop(const MGWEvents &e)
+{
+	int err_code = 0;
+
+	while (getchar() != 'q') {
+		usleep(10 * 1000);
+	}
+
+	return err_code;
 }
 
 int main(int argc, char *argv[])
 {
-    mgw_data_t *source_settings = NULL;
-    mgw_data_t *output_settings = NULL;
-    blog(MGW_LOG_DEBUG, "------------  mgw test start ------------");
+	const char *exec_path = os_get_exec_path();
+	if (!exec_path) {
+		tlog(TLOG_FATAL, "Tired to get exec path failed!\n");
+		return mgw_err_status::MGW_ERR_BAD_PATH;
+	}
+	const char *process_name = os_get_process_name();
+	if (!process_name) {
+		tlog(TLOG_FATAL, "Tried to get process name failed!\n");
+		return mgw_err_status::MGW_ERR_BAD_PATH;
+	}
 
-	tlog_init(MGW_LOG_FILENAME, MGW_LOG_FILELEN, MGW_LOG_FILECNT,
-				MGW_LOG_BLOCKSIZE, MGW_LOG_BUFFERSIZE, MGW_LOG_MULTIWRITE);
+	std::string name = std::string(process_name) + ".log";
+	struct tlog_config log_cfg = {
+		.block		= 1,
+		.multiwrite	= 0,
+		.max_size	= 2 * 1024 * 1024,	//2M
+		.max_count	= 10,
+		.buffer_size = 0,	//Do not buffer,log it directly
+		.filename	= name.data()
+	};
+	tlog_init(&log_cfg);
 
-	// Message &msg = Message::GetInstance();
+	char *config_file = NULL;
+	if (!parse_options(argc, argv, &config_file))
+		return 0;
 
-	// if (msg_status::MSG_STATUS_SUCCESS !=
-	// 	msg.Register("/home/young/workDir/mgw/install/bin/server-config-test.json")) {
-	// 	blog(MGW_LOG_ERROR, "Register api and message server failed!");
-	// 	goto finished;
-	// }
+	
+	std::string mgw_config(config_file);
+	if (mgw_config.empty())
+		std::string(exec_path) + "/mgw-config.json";
+	if (!os_file_exists(mgw_config.data())) {
+		tlog(TLOG_ERROR, "Haven't configuration file!\n");
+		return mgw_err_status::MGW_ERR_BAD_PATH;
+	}
 
-    if (mgw_app_startup("mgw-config.json"))
-        blog(MGW_LOG_DEBUG, "mgw startup success");
-    else
-        blog(MGW_LOG_DEBUG, "mgw startup failed");
+	tlog(TLOG_INFO, "----------------  mgw startup ------------------");
+	MGWApp &app = MGWApp::GetInstance();
+	if (!app.Startup(mgw_config)) {
+		tlog(TLOG_ERROR, "Tried to start app with "\
+				"configuration file:%s failed!\n", mgw_config.data());
+		return mgw_err_status::MGW_ERR_ESTARTING;
+	}
 
-    stream = mgw_stream_create("mgw_server_stream1", mgw_stream_cb);
-    if (!stream)
-        goto error;
+#ifdef CONFIG_MESSAGE
+	std::string server_config = std::string(exec_path) + "";
+	Message &msg = Message::GetInstance();
+	if (msg_status::MSG_STATUS_SUCCESS !=
+		msg.Register("")) {
+		tlog(TLOG_ERROR, "Register api and message server failed!");
+		code = mgw_err_status::MGW_ERR_EMESSAGE_REGISTER;
+		goto error;
+	}
+#endif
 
-    source_settings = mgw_data_create_from_json_file("source-config.json");
-    mgw_stream_add_private_source(stream, source_settings);
-    mgw_data_release(source_settings);
+	if (!app.AttempToReset())
+		tlog(TLOG_INFO, "Attemp to reset all settings failed!\n");
 
-    /** start demux and send packet to source */
-	// demux = ff_demux_create("/home/young/workDir/mgw/install/bin/ppp.mp4", false);
-	// ff_demux_start(demux, proc_packet, stream);
-
-	// demux = ff_demux_create("rtmp://192.168.0.16/live/stream0", false);
-	demux = ff_demux_create("rtsp://192.168.0.29/live/1st/living_play", false);
-
-	char code;
-	while('q' != (code = getchar()))
-    {
-		switch(code) {
-            case '1': {
-                output_settings = mgw_data_create_from_json_file("output-config-template.json");
-                mgw_stream_add_ouptut(stream, output_settings);
-                mgw_data_release(output_settings);
-                break;
-            }
-            case '2': mgw_stream_release_output(stream, "output1"); break;
-			case '3': {
-				output_settings = mgw_data_create_from_json_file("output-config-template.json");
-				mgw_data_set_int(output_settings, "channel", 2);
-				mgw_data_set_string(output_settings, "id", "output2");
-				mgw_data_set_string(output_settings, "path", "srt://192.168.0.24:4301?streamid=#!::h=live/livestream,m=publish");
-				mgw_data_set_string(output_settings, "protocol", "srt");
-                mgw_stream_add_ouptut(stream, output_settings);
-                mgw_data_release(output_settings);
-				break;
-			}
-			case '4':mgw_stream_release_output(stream, "output2"); break;
-			default: break;
-		}
-		usleep(50 * 1000);
-    }
+	MGWEvents e;
+	int code = events_loop(e);
 
 error:
-	ff_demux_stop(demux);
-	ff_demux_destroy(demux);
-	mgw_stream_destroy(stream);
-	mgw_app_exit();
-finished:
-	blog(MGW_LOG_DEBUG, "------------  mgw test end ------------");
-	return 0;
+	bfree((void *)exec_path);
+	bfree((void*)process_name);
+	tlog(TLOG_DEBUG, "------------  mgw shutdown code(%d) ------------", code);
+	return code;
 }

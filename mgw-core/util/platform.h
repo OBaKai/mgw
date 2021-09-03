@@ -194,6 +194,8 @@ EXPORT uint64_t os_get_proc_resident_size(void);
 EXPORT uint64_t os_get_proc_virtual_size(void);
 
 EXPORT void log_system_info(void);
+EXPORT const char *os_get_exec_path(void);
+EXPORT const char *os_get_process_name(void);
 
 #ifdef _MSC_VER
 #define strtoll _strtoi64

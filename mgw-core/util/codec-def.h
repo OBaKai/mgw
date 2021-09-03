@@ -23,12 +23,12 @@ enum encoder_type {
     ENCODER_VIDEO
 };
 
-enum encoder_id {
+typedef enum encoder_id {
     ENCID_NONE = 0,
     ENCID_AAC,
     ENCID_H264,
     ENCID_HEVC,
-};
+}encoder_id_t;
 
 typedef enum frame_type {
     FRAME_UNKNOWN = -1,
@@ -195,6 +195,8 @@ size_t mgw_get_aaclc_flv_header(
 size_t mgw_aac_add_adts(uint32_t samplerate, int profile,
 		uint32_t channels, size_t size, uint8_t *data, uint8_t *out);
 size_t mgw_aac_leave_adts(uint8_t *src, size_t src_size, uint8_t *dst, size_t dst_size);
+
+const char *mgw_get_vcodec_id(encoder_id_t id);
 
 #ifdef __cplusplus
 }
