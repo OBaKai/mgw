@@ -117,7 +117,7 @@ static bool mpegts_add_video_stream(struct mpegts_format *ts)
 	ts->video_stream->time_base = codec_ctx->time_base;
 	*/
 	AVOutputFormat *ofmt =  ts->fmt_ctx->oformat;
-	ofmt->video_codec 			 = codec_id;
+	// ofmt->video_codec 			 = codec_id;
 	ts->video_stream->id		 = 0;//ts->fmt_ctx->oformat->video_codec;
 	codec_ctx->codec_id          = codec_id;
 	codec_ctx->codec_type        = AVMEDIA_TYPE_VIDEO;
@@ -168,7 +168,7 @@ static bool mpegts_add_audio_stream(struct mpegts_format *ts)
 		audio_bitrate, samplerate, samplesize, channels);
 
 	AVOutputFormat *ofmt = ts->fmt_ctx->oformat;
-	ofmt->audio_codec			 = codec_id;
+	// ofmt->audio_codec			 = codec_id;
 	codec_ctx->sample_fmt 		 = codec_ctx->sample_fmt ? codec_ctx->sample_fmt : AV_SAMPLE_FMT_FLTP;
 	ts->audio_stream->id         = ts->fmt_ctx->nb_streams - 1;//ts->fmt_ctx->oformat->audio_codec;
 	// codec_ctx->frame_size        = 1024;
@@ -262,7 +262,7 @@ static void *mpegts_create(mgw_data_t *settings, int flags,
 		ts->fmt_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 		ts->fmt_ctx->flags |= AVFMT_FLAG_FLUSH_PACKETS;
 		/**< Not create the file */
-		ofmt->flags |= AVFMT_NOFILE;
+		// ofmt->flags |= AVFMT_NOFILE;
 
 	} else if (!(ts->flags & MGW_FORMAT_NO_FILE) && !dstr_is_empty(&ts->dst_file)) {
 		if (avio_open(&ts->fmt_ctx->pb, ts->dst_file.array, AVIO_FLAG_WRITE) < 0) {

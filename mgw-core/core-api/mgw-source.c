@@ -3,6 +3,7 @@
 #include "util/tlog.h"
 #include "util/threading.h"
 #include "buffer/ring-buffer.h"
+#include "libavformat/avformat.h"
 
 #define FFMPEG_SOURCE	"ffmpeg_source"
 #define LOCAL_SOURCE	"local_source"
@@ -227,9 +228,21 @@ static mgw_source_t *mgw_source_create_internal(
 		bfree(header);
 
 		size = source->info.get_extra_data(source->context.info_impl, ENCODER_AUDIO, &header);
-		bmem_copy(&source->video_header, (const char *)header, size);
+		bmem_copy(&source->audio_header, (const char *)header, size);
 		bfree(header);
 	}
+
+	// mgw_data_t *meta = mgw_data_get_obj(source->context.settings, "meta");
+	// if (meta) {
+	// 	const char *video_payload = mgw_data_get_string(meta, "vencoderID");
+	// 	uint32_t channels = mgw_data_get_int(meta, "channels");
+	// 	uint32_t samplerate = mgw_data_get_int(meta, "samplerate");
+	// 	uint32_t samplesize = mgw_data_get_int(meta, "samplesize");
+	// 	tlog(TLOG_DEBUG, "setting audio meta chn(%d), samplerate(%d), samplesize(%d)", channels, samplerate, samplesize);
+	// 	mgw_source_set_audio_extra_data(source, channels, samplesize, samplerate);
+	// 	if (!strcmp(video_payload, "avc1"))
+	// 		source->video_payload = ENCID_H264;
+	// }
 
 	os_atomic_set_bool(&source->enabled, true);
 	return source;

@@ -441,7 +441,8 @@ int GetOneFrameFromBuff(BuffContext *pcontext, uint8_t **pframe,uint32_t maxfram
 	rp = pRead->u32RdFrameCount % phead->uiMaxValidFrames;
 	if(pstuFrames[rp].ucValidFlag == 0)
 	{
-		_printd("(%s %s)  pos=%d invalid frame ,jump to oldest iframe r=%d w=%d\n", pcontext->Name, pcontext->UserId, rp, pRead->u32RdFrameCount, phead->uiWritFrameCount);
+		_printd("(%s %s)  pos=%d invalid frame ,jump to oldest iframe r=%d w=%d\n",
+				pcontext->Name, pcontext->UserId, rp, pRead->u32RdFrameCount, phead->uiWritFrameCount);
 		if(JumpToOldestIFrame(pRead, phead, pstuFrames) == -1)
 		{
 			return FRAME_CONSUME_SLOW;

@@ -17,6 +17,7 @@
 *.app
 *.hex
 *.bin
+*/mgw
 
 #Debug files
 *.mp4

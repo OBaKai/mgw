@@ -371,6 +371,7 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 {
 	mgw_output_t  *context  = stream->output;
 	call_params_t params = {};
+	char header[8] = {0xaf, 0x00};
 	struct encoder_packet packet   = {
 		.type         = ENCODER_AUDIO,
 		.timebase_den = 1,
@@ -378,13 +379,25 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 		.dts		  = ts
 	};
 
+	if (0 != do_source_proc_handler(stream, "get_encoder_settings", &params)) {
+		tlog(TLOG_ERROR, "Couldn't get source settings!\n");
+		return false;
+	}
+	int channels = mgw_data_get_int((mgw_data_t*)params.out, "channels");
+	int samplesize = mgw_data_get_int((mgw_data_t*)params.out, "samplesize");
+	if (samplesize == 8) header[0] &= 0xfd;
+	if (channels == 1) header[0] &= 0xfe;
+	bfree(params.out);
+
 	if (0 != do_source_proc_handler(stream, "get_audio_header", &params)) {
 		tlog(TLOG_ERROR, "Couldn't get audio header!\n");
 		return false;
 	}
-	//must be AudioSpecificConfig -- aac
-	packet.size = params.out_size;
-	packet.data = bmemdup(params.out, packet.size);
+	//must be flv header + AudioSpecificConfig -- aac
+	packet.size = params.out_size + 2;
+	memcpy(header + 2, params.out, params.out_size);
+	packet.data = bmemdup(header, packet.size);
+	bfree(params.out);
 	return send_packet_internal(stream, &packet, true, idx);
 }
 
@@ -507,6 +520,7 @@ static void *send_thread(void *data)
 		packet.data = stream->frame_buffer + MGW_AVCC_HEADER_SIZE;
 		if (0 >= (ret = stream->output->get_encoder_packet(
 								stream->output, &packet))) {
+			usleep(5 * 1000);
             continue;
         }
 
@@ -530,8 +544,8 @@ static void *send_thread(void *data)
 		}
 
 		stream->sent_frames++;
-		if (0 == stream->sent_frames % sleep_freq)
-			usleep(10000);
+		if (0 == (stream->sent_frames % sleep_freq))
+			usleep(10 *1000);
 	}
 error:
 #undef SET_DISCONNECT

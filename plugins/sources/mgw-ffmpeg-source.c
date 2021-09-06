@@ -91,7 +91,7 @@ static void init_once_thread(void)
 	avformat_network_init();
 	av_log_set_flags(AV_LOG_SKIP_REPEATED);
 	av_log_set_level(AV_LOG_INFO);
-	av_log_set_callback(ffmpeg_log_callback);
+	// av_log_set_callback(ffmpeg_log_callback);
 }
 
 static const char *ffmpeg_source_get_name(void *type)
@@ -238,7 +238,7 @@ static void *ffmpeg_source_create(mgw_data_t *setting, mgw_source_t *source)
 
 	s->save_to_file = mgw_data_get_bool(setting, "save_file");
 	const char *uri = mgw_data_get_string(setting, "uri");
-	s->save_to_file = true;
+	// s->save_to_file = true;
 	if (!uri) {
 		tlog(TLOG_DEBUG, "couldn't find uri!");
 		goto error;
@@ -290,10 +290,12 @@ static void *read_thread(void *arg)
 						fwrite(bsf_pkt.data, bsf_pkt.size, 1, s->video_file);
 						fflush(s->video_file);
 					}
-					// tlog(TLOG_DEBUG, "write video data! pts = %"PRId64" size = %d, data[0]:%02x, "\
-					// 			"data[1]:%02x, data[2]:%02x, data[3]:%02x, data[4]:%02x",
-					// 			bsf_pkt.pts, bsf_pkt.size, bsf_pkt.data[0], bsf_pkt.data[1], \
-					// 			bsf_pkt.data[2], bsf_pkt.data[3], bsf_pkt.data[4]);
+					int start_code = mgw_avc_get_startcode_len(bsf_pkt.data);
+					if (start_code < 0)
+						tlog(TLOG_DEBUG, "Write video data! no nalu header, pts = %"PRId64" size = %d, data[0]:%02x, "\
+								"data[1]:%02x, data[2]:%02x, data[3]:%02x, data[4]:%02x",
+								bsf_pkt.pts, bsf_pkt.size, bsf_pkt.data[0], bsf_pkt.data[1], \
+								bsf_pkt.data[2], bsf_pkt.data[3], bsf_pkt.data[4]);
 
 					packet.type = ENCODER_VIDEO;
 					packet.keyframe = mgw_avc_keyframe(bsf_pkt.data, bsf_pkt.size);
@@ -323,7 +325,6 @@ static void *read_thread(void *arg)
 			av_packet_unref(&pkt);
 		}
 
-		// if (frame_cnt % 8)
 		usleep(5 *1000);
 	}
 
@@ -451,9 +452,11 @@ static size_t ffmpeg_source_get_header(void *data, enum encoder_type type, uint8
 	else
 		return 0;
 
-	*header = bmemdup(s->vst->codecpar->extradata,
-						s->vst->codecpar->extradata_size);
-	return s->vst->codecpar->extradata_size;
+	*header = bmemdup(st->codecpar->extradata,
+						st->codecpar->extradata_size);
+	av_hex_dump(stdout, st->codecpar->extradata,
+						st->codecpar->extradata_size);
+	return st->codecpar->extradata_size;
 }
 
 struct mgw_source_info ffmpeg_source_info = {
