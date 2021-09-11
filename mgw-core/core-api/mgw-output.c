@@ -53,7 +53,8 @@ const struct mgw_output_info *find_output_info(const char *id)
 
 static proc_handler_t *output_get_source_proc_handler(mgw_output_t *output)
 {
-	return output ? output->parent_stream->source->context.procs : NULL;
+	return !!output && !!output->parent_stream ?
+			output->parent_stream->source->context.procs : NULL;
 }
 
 static inline int output_proc_handler(mgw_output_t *output,

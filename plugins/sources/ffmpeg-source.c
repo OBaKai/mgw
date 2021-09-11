@@ -437,6 +437,9 @@ static mgw_data_t *ffmpeg_source_get_settings(void *data)
 	mgw_data_set_int(meta, "samplesize", s->ast->codecpar->bits_per_coded_sample);
 	mgw_data_set_int(meta, "abps", s->ast->codecpar->bit_rate);
 
+	tlog(TLOG_DEBUG, "Get ffmpeg source settings, width:%d, channels:%d",
+				s->vst->codecpar->width, s->ast->codecpar->channels);
+
 	return meta;
 }
 

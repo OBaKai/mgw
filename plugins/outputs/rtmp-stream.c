@@ -346,8 +346,8 @@ error:
 
 static bool send_meta_data(struct rtmp_stream *stream, size_t idx)
 {
-	uint8_t *meta_data;
-	size_t  meta_data_size;
+	uint8_t *meta_data = NULL;
+	size_t  meta_data_size = 0;
 
 	call_params_t params = {};
 	if (0 != do_source_proc_handler(stream, "get_encoder_settings", &params)) {
@@ -709,7 +709,7 @@ static int try_connect(struct rtmp_stream *stream)
 
     if (!RTMP_ConnectStream(&stream->rtmp, 0))
         return MGW_INVALID_STREAM;
-    tlog(TLOG_INFO, "Connecting rtmp stream success!\n");
+    tlog(TLOG_INFO, "Connecting rtmp stream success!");
     return init_send(stream);
 }
 

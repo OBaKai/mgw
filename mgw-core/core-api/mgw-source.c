@@ -42,8 +42,8 @@ static int get_encoder_setting(void *source, struct call_params *params)
 		out = s->info.get_settings(s->context.info_impl);
 	else
 		out = mgw_data_get_obj(s->context.settings, "meta");
-	params->out = out;
 
+	params->out = out;
 	return MGW_ERR_SUCCESS;
 }
 
