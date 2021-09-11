@@ -142,7 +142,6 @@ static void *stop_thread(void *arg)
 }
 
 #define MAX_RETRY_SEC (15 * 60)
-
 static void output_reconnect(struct mgw_output *output)
 {
 	int ret;
@@ -184,8 +183,8 @@ static void output_reconnect(struct mgw_output *output)
 		os_atomic_set_bool(&output->reconnecting, false);
 	} else {
 		tlog(TLOG_INFO, "Output '%s':  Reconnecting in %d seconds..",
-							output->context.info_id, output->reconnect_retry_sec);
-		const char *name = output->context.obj_name;
+							output->context.obj_name, output->reconnect_retry_sec);
+		// const char *name = output->context.obj_name;
 		//signal_reconnect(output);
 	}
 }
@@ -295,9 +294,15 @@ static bool mgw_output_init(struct mgw_output *output)
 	output->get_encoder_packet		= output_get_encoder_packet;
 	output->get_source_proc_handler	= output_get_source_proc_handler;
 
-	mgw_context_data_insert(&output->context,
-				&output->parent_stream->outputs_mutex,
-				&output->parent_stream->outputs_list);
+	if (mgw_stream_has_source(output->parent_stream)) {
+		mgw_context_data_insert(&output->context,
+					&output->parent_stream->outputs_mutex,
+					&output->parent_stream->outputs_list);
+	} else {
+		mgw_context_data_insert(&output->context,
+					&output->parent_stream->outputs_whitelist_mutex,
+					&output->parent_stream->outputs_whitelist);
+	}
 
 	return true;
 }

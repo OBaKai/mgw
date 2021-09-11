@@ -116,7 +116,7 @@ static bool mpegts_add_video_stream(struct mpegts_format *ts)
 	codec_ctx->pix_fmt		= AV_PIX_FMT_YUV420P;
 	ts->video_stream->time_base = codec_ctx->time_base;
 	*/
-	AVOutputFormat *ofmt =  ts->fmt_ctx->oformat;
+	// AVOutputFormat *ofmt =  ts->fmt_ctx->oformat;
 	// ofmt->video_codec 			 = codec_id;
 	ts->video_stream->id		 = 0;//ts->fmt_ctx->oformat->video_codec;
 	codec_ctx->codec_id          = codec_id;
@@ -167,7 +167,7 @@ static bool mpegts_add_audio_stream(struct mpegts_format *ts)
 	blog(MGW_LOG_INFO, "abps(%d) samplerate(%d) samplesize(%d) channels(%d)",
 		audio_bitrate, samplerate, samplesize, channels);
 
-	AVOutputFormat *ofmt = ts->fmt_ctx->oformat;
+	// AVOutputFormat *ofmt = ts->fmt_ctx->oformat;
 	// ofmt->audio_codec			 = codec_id;
 	codec_ctx->sample_fmt 		 = codec_ctx->sample_fmt ? codec_ctx->sample_fmt : AV_SAMPLE_FMT_FLTP;
 	ts->audio_stream->id         = ts->fmt_ctx->nb_streams - 1;//ts->fmt_ctx->oformat->audio_codec;

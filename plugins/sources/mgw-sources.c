@@ -4,9 +4,10 @@
 
 #include "util/darray.h"
 
-#define SOURCES_DESCRIPTION     "sources: [ffmpeg-source]"
+#define SOURCES_DESCRIPTION     "sources: [ffmpeg-source, srt-source]"
 
 extern struct mgw_source_info ffmpeg_source_info;
+extern struct mgw_source_info srt_source_info;
 
 static inline bool check_and_register_source_info(\
             struct mgw_source_info *info, struct darray *sources)
@@ -37,10 +38,9 @@ bool sources_load(struct darray *sources, size_t type_size)
 		sizeof(struct mgw_source_info)))
 		return false;
 
-	/** 
-	 * Register all source here
-	*/
+	/**< Register all source here */
 	check_and_register_source_info(&ffmpeg_source_info, sources);
+	check_and_register_source_info(&srt_source_info, sources);
 
 	return true;
 }

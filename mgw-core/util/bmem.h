@@ -6,6 +6,12 @@
 #include <wchar.h>
 
 #ifdef __cplusplus
+#define cpp_safe_delete(p) do {\
+		delete (p); (p) = nullptr; \
+	} while (false)
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 

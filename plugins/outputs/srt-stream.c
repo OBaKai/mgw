@@ -14,7 +14,6 @@
 #include "util/callback-handle.h"
 #include "formats/mgw-formats.h"
 
-#include "srt/srt.h"
 #include "thirdparty/mgw-libsrt.h"
 
 #undef  SRT_MODULE_NAME
@@ -142,8 +141,7 @@ int srt_stream_proc_packet(void *opaque, uint8_t *buf, int buf_size)
 	}
 
 	/**< send data left, but not greater than payload size 
-	 * 	 Find out all full TS package sizes and send them
-	*/
+	 * 	 Find out all full TS package sizes and send them */
 	if (left_size > 0) {
 		int full_ts_sizes = 0;
 		int ts_left = left_size % MPEGTS_FIX_SIZE;
@@ -222,7 +220,7 @@ static void *srt_stream_create(mgw_data_t *setting, mgw_output_t *output)
 	/**< Create mpegts for srt */
 	call_params_t params = {};
 	if (0 != do_source_proc_handler(stream, "get_encoder_settings", &params)) {
-		tlog(TLOG_ERROR, "Couldn't get encoder settings!\n");
+		tlog(TLOG_ERROR, "Couldn't get encoder settings!");
 		goto error;
 	}
 	stream->mpegts_info = bzalloc(sizeof(struct mgw_format_info));
@@ -234,7 +232,7 @@ static void *srt_stream_create(mgw_data_t *setting, mgw_output_t *output)
 	/**< Create libsrt context */
 	const char *uri = mgw_data_get_string(stream->settings, "path");
 	if (!uri) {
-		tlog(TLOG_ERROR, "SRT stream uri is NULL!\n");
+		tlog(TLOG_ERROR, "SRT stream uri is NULL!");
 		goto error;
 	}
 	dstr_copy(&stream->uri, uri);
@@ -258,12 +256,9 @@ error:
 
 static int init_connect(struct srt_stream *stream)
 {
-	//size_t header_size = 0;
-	//uint8_t *header = NULL;
 	bool success = false;
-
 	if (dstr_is_empty(&stream->uri)) {
-		tlog(TLOG_ERROR, "Tried to open srt but uri is NULL!\n");
+		tlog(TLOG_ERROR, "Tried to open srt but uri is NULL!");
 		return MGW_BAD_PATH;
 	}
 
@@ -274,35 +269,32 @@ static int init_connect(struct srt_stream *stream)
 	stream->send_error_cnt		= 0;
 
 	/**< mpegts startup */
-	//header_size = stream->output->get_video_header(stream->output, &header);
 	if (stream->mpegts_info) {
 		if (!stream->mpegts) {
 			call_params_t params = {};
 			if (0 != do_source_proc_handler(stream, "get_encoder_settings", &params)) {
-				tlog(TLOG_ERROR, "Couldn't get encoder settings!\n");
+				tlog(TLOG_ERROR, "Couldn't get encoder settings!");
 				return MGW_ERROR;
 			}
 			stream->mpegts = stream->mpegts_info->create((mgw_data_t *)params.out, \
 							MGW_FORMAT_NO_FILE, srt_stream_proc_packet, stream);
 			mgw_data_release((mgw_data_t *)params.out);
 		}
-		//stream->mpegts_info->set_extra_data(stream->mpegts, (const uint8_t*)header, header_size);
 		success = stream->mpegts_info->start(stream->mpegts);
 		if (!success) {
 			blog(MGW_LOG_ERROR, "Srt stream start mpegts failed!");
-			//bfree(header);
 			return MGW_INVALID_STREAM;
 		}
 	}
-	//bfree(header);
 
+	tlog(TLOG_INFO, "Connect to srt uri: %s ...", stream->uri.array);
 	/**< SRT is base on UDT and UDT is base on UDP, startup is fast, just one TTL */
 	int ret = mgw_libsrt_open(stream->srt_context, stream->uri.array, SRT_IO_FLAG_WRITE);
 	if (0 != ret) {
-		tlog(TLOG_ERROR, "Tried to open srt(%s) failed! ret = %d, try it again\n", stream->uri.array, ret);
+		tlog(TLOG_ERROR, "Tried to open srt(%s) failed! ret = %d, try it again", stream->uri.array, ret);
 		return MGW_CONNECT_FAILED;
 	}
-	blog(MGW_LOG_INFO, "Connect to srt uri:'%s' success!", stream->uri.array);
+	tlog(TLOG_INFO, "Connect to srt uri:'%s' success!", stream->uri.array);
 	int64_t maxbw = ((6144+128) * 5000) / 16;
 	mgw_libsrt_set_maxbw(stream->srt_context, maxbw);
 
@@ -317,11 +309,12 @@ static void *connect_and_send_thread(void *arg)
 	os_set_thread_name("srt stream: connect_and_send_thread");
 
 	if ((ret = init_connect(stream)) != MGW_SUCCESS) {
-		tlog(TLOG_ERROR, "Tried to connect srt failed, ret[%d]\n", ret);
+		tlog(TLOG_ERROR, "Tried to connect srt failed, ret[%d]", ret);
 		goto error;
 	}
 	os_atomic_set_bool(&stream->active, true);
 
+	os_set_thread_name("srt-stream: connect and send thread");
 	while(active(stream)) {
 		if (stopping(stream) || disconnected(stream))
 			break;
@@ -384,7 +377,7 @@ static bool srt_stream_start(void *data)
 		return false;
 
 	if (!do_output_proc_handler(stream, "source_ready", NULL)) {
-		tlog(TLOG_WARN, "Source are not ready when startup srt stream!\n");
+		tlog(TLOG_WARN, "Source are not ready when startup srt stream!");
 		return false;
 	}
 
@@ -400,7 +393,7 @@ static void srt_stream_stop(void *data)
 	if (active(stream))
 		os_event_signal(stream->stop_event);
 	else {
-		tlog(TLOG_INFO, "srt stream stop signal stop, ret:%d\n", MGW_SUCCESS);
+		tlog(TLOG_INFO, "srt stream stop signal stop, ret:%d", MGW_SUCCESS);
 		int ret = MGW_SUCCESS;
 		call_params_t params = {.in = &ret};
 		do_output_proc_handler(stream, "signal_stop", &params);

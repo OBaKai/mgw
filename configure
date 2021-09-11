@@ -1,0 +1,7 @@
+#!/bin/bash
+
+PROJECT_ROOT_PATH=`pwd`
+
+#generate protobuf file
+$PROJECT_ROOT_PATH/deps/bin/protoc --proto_path=$PROJECT_ROOT_PATH/message/resources \
+--cpp_out=$PROJECT_ROOT_PATH/message $PROJECT_ROOT_PATH/message/resources/*.proto

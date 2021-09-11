@@ -25,7 +25,7 @@ LIB_DIR += ../deps/lib/x86
 LIBS = -lmgw-core -lmgw-outputs -lmgw-sources -lmgw-formats -lmgw-message -lmgw-thirdparty \
 -lmgw-buffer -lmgw-util -lavformat -lavcodec -lavfilter -lavutil -lswscale -lpostproc \
 -lswresample -lavdevice -lrtmp -lsrt -lx264 -lx265 -lfdk-aac \
--lcurl -lwebsockets -lssl -lcrypto -lz -ljansson -lrt \
+-lcurl -lwebsockets -lprotobuf -lssl -lcrypto -lz -ljansson -lrt \
 -lpthread -ldl -lmbedtls -lmbedx509 -lmbedcrypto
 
 else

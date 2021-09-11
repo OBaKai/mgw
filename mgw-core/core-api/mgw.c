@@ -545,6 +545,12 @@ mgw_device_t *mgw_get_device_by_name(const char *name)
 			&mgw->data.devices_mutex, mgw_device_addref_safe_);
 }
 
+mgw_device_t *mgw_get_weak_device_by_name(const char *name)
+{
+	if (!mgw) return NULL;
+	return get_context_by_name(&mgw->data.devices_list, name,
+			&mgw->data.devices_mutex, NULL);
+}
 
 bool mgw_get_source_info(struct mgw_source_info *msi)
 {

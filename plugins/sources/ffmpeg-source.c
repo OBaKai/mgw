@@ -11,7 +11,7 @@
 #include "libavfilter/avfilter.h"
 #include "libswscale/swscale.h"
 
-#define MGW_FF_SRC_NAME		"ffmpeg_source"
+#define MGW_FF_SRC_NAME		"ffmpeg-source"
 #define VBSF_H264			"h264_mp4toannexb"
 #define VBSF_HEVC			"hevc_mp4toannexb"
 #define ABSF_AAC			"aac_adtstoasc"
@@ -82,7 +82,7 @@ void ffmpeg_log_callback(void *opaque, int level, const char *fmt, va_list arg)
 	static char buffer[4096] = {};
 	memset(buffer, 0, sizeof(buffer));
 	vsnprintf(buffer, sizeof(buffer), fmt, arg);
-	// tlog(level, "%s", buffer);
+	tlog(level, "%s", buffer);
 }
 
 /**< Initialize ffmpeg all environment*/
@@ -265,6 +265,7 @@ static void *read_thread(void *arg)
 	char *audio_buffer = bzalloc(AAC_SAMPLE_SIZE_MAX);
 	uint32_t frame_cnt = 0;
 
+	os_set_thread_name("ffmpeg-source: read thread");
 	while (actived(s)) {
 		if (stopping(s))
 			break;

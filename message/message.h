@@ -14,18 +14,22 @@ extern "C" {
 
 struct user_infos;
 
-enum class msg_status:int {
-	MSG_STATUS_SUCCESS					= 0,
-	MSG_STATUS_PARMER_INVALID			= -1,
-	MSG_STATUS_BAD_PATH					= -2,
-	MSG_STATUS_ACCESSREQ_FAILED			= -3,
-	MSG_STATUS_AUTHENREQ_FAILED			= -4,
-	MSG_STATUS_REGISTERREQ_FAILED		= -5,
-	MSG_STATUS_WSCLIENT_START_FAILED	= -6,
-	MSG_STATUS_EXISTED					= -7
+enum msg_status:int {
+    MSG_STATUS_SUCCESS                  = 0,
+    MSG_STATUS_PARMER_INVALID           = -1,
+    MSG_STATUS_BAD_PATH                 = -2,
+    MSG_STATUS_ACCESSREQ_FAILED         = -3,
+    MSG_STATUS_AUTHENREQ_FAILED         = -4,
+    MSG_STATUS_REGISTERREQ_FAILED       = -5,
+    MSG_STATUS_WSCLIENT_START_FAILED    = -6,
+    MSG_STATUS_EXISTED                  = -7,
+    /**< For message status */
+    MSG_STATUS_NOTSUPPORTED             = -8,
+    MSG_STATUS_PARSE_ERROR              = -9,
+	MSG_STATUS_NODEVICE					= -10,
 };
 
-class Message
+class Message final
 {
 public:
 	static Message &GetInstance(void) {
@@ -34,11 +38,15 @@ public:
 	}
 
 	~Message();
-	msg_status Register(const std::string &configPath);
+	msg_status Register(const std::string &config);
 	msg_status Register(mgw_data_t *settings);
 	void UnRegister(void);
-	bool Alive(void) const {return wsclient_actived(ws_client_);}
+	bool Alive(void) const {
+		return registered_ && wsclient_actived(ws_client_);
+	}
 	int SendMessage(mgw_data_t *data, int cmd);
+    static msg_resp_t WSClientCallback(void *opaque, char *data, size_t size, cmd_t cmd);
+
 private:
 	Message();
 	Message(const Message &) = delete;
@@ -46,6 +54,8 @@ private:
 	Message operator=(const Message &) = delete;
 
 	/********************** API Register **********************************/
+	std::string SendAPIReqMessage(CURL *curl, const std::string &host,
+				const std::string &uri, const std::string &body);
 	/**
 	 * body include those field: key, type, sub_type, vendor, version, sn
 	 * retrun : error, serial, challenge
@@ -64,17 +74,19 @@ private:
 	 * 				district, sign, sex, birth, additions[], ref, points, invited_user_counts,
 	 * 				hash_id, cid, token}, msgcenter_ip, msgcenter_port, ping_interval, config_str
 	*/
+	inline msg_status RegisterWrap(void);
 	bool RegisterInternal(void);
 	bool InitMessageEnv(void);
+	std::string &&SerializeMessageToPb(mgw_data_t *data, int cmd);
+	mgw_data_t *DeserializeMessageFromPb(const char *data, size_t size, int cmd);
 
-	static void *ReceivingThread(const Message &msg);
-
+private:
     /* data */
 	bool				registered_;
 	CURL				*curl_;
-	void				*ws_client_;
 	mgw_data_t			*settings_;
 	struct user_infos	*infos_;
+	void				*ws_client_;
 };
 
 #endif  //_MGW_MESSAGE_MESSAGE_H_

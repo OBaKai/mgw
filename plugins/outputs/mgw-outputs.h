@@ -22,7 +22,7 @@ extern "C" {
 struct mgw_output;
 typedef struct mgw_output mgw_output_t;
 
-public_visi struct mgw_output_info {
+struct mgw_output_info {
     const char      *id;
     uint32_t        flags;
 

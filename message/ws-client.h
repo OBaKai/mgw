@@ -2,6 +2,7 @@
 #define __MESSAGE_WS_CLIENT_H__
 
 #include <util/c99defs.h>
+#include "message-def.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,18 +16,13 @@ typedef enum {
 	STATUS_PARSE_ERROR			= -3,
 } ws_status;
 
-typedef enum command_type {
-	CMD_START_STREAM		= 0,
-	CMD_REQ_PULLADDR		= 1,
-}cmd_t;
-
 typedef struct message_resp {
 	int			status;
 	void		*body;
 	size_t		size;
 }msg_resp_t;
 
-typedef msg_resp_t (*write_cb)(void *, char *data, cmd_t cmd);
+typedef msg_resp_t (*write_cb)(void *, char *data, size_t size, cmd_t cmd);
 
 struct wsclient_info {
 	const char *uri;

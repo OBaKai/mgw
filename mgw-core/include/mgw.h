@@ -44,6 +44,7 @@ mgw_stream_t *mgw_get_stream_by_name(mgw_stream_t *stream_list,
 mgw_stream_t *mgw_get_weak_stream_by_name(mgw_stream_t *stream_list,
 						pthread_mutex_t *mutex, const char *name);
 mgw_device_t *mgw_get_device_by_name(const char *name);
+mgw_device_t *mgw_get_weak_device_by_name(const char *name);
 
 bool mgw_get_source_info(struct mgw_source_info *msi);
 bool mgw_get_output_info(struct mgw_output_info *moi);
@@ -168,6 +169,7 @@ const char *mgw_stream_get_name(const mgw_stream_t *stream);
 
 int mgw_stream_add_source(mgw_stream_t *stream, mgw_data_t *source_settings);
 void mgw_stream_release_source(mgw_stream_t *stream);
+bool mgw_stream_has_source(mgw_stream_t *stream);
 
 int mgw_stream_add_output(mgw_stream_t *stream, mgw_data_t *output_settings);
 void mgw_stream_release_output(mgw_stream_t *stream, mgw_output_t *output);
@@ -181,7 +183,7 @@ bool mgw_stream_send_packet(mgw_stream_t *stream, struct encoder_packet *packet)
 /***********************************
  * Device operations
  **********************************/
-mgw_device_t *mgw_device_create(const char *id, const char *name, mgw_data_t *settings);
+mgw_device_t *mgw_device_create(const char *type, const char *sn, mgw_data_t *settings);
 
 void mgw_device_addref(mgw_device_t *device);
 void mgw_device_release(mgw_device_t *device);
@@ -192,9 +194,20 @@ bool mgw_device_references_device(
 
 const char *mgw_device_get_name(const mgw_device_t *device);
 
+bool mgw_device_has_stream(mgw_device_t *device);
 int mgw_device_add_stream(mgw_device_t *device, const char *id, mgw_data_t *settings);
 int mgw_device_add_stream_obj(mgw_device_t *device, mgw_stream_t *stream);
 void mgw_device_release_stream(mgw_device_t *device, const char *id);
+int mgw_device_addstream_with_outputs(mgw_device_t *device, mgw_data_t *stream_settings);
+int mgw_device_addstream_with_source(mgw_device_t *device, mgw_data_t *stream_settings);
+
+/**< Add output stream to default stream if stream_name is NULL */
+int mgw_device_add_output_to_stream(mgw_device_t *device,
+			const char *stream_name, mgw_data_t *output_info);
+/**< Release output stream from default stream if stream_name is NULL */
+void mgw_device_release_output_from_stream(mgw_device_t *device,
+			const char *stream_name, mgw_data_t *output_info);
+
 bool mgw_device_send_packet(mgw_device_t *device,
 						const char *stream_name,
 						struct encoder_packet *packet);

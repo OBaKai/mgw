@@ -97,6 +97,7 @@
 		"dstr.h": "c",
 		"callback-handle.h": "c",
 		"queue": "cpp",
-		"thread": "c"
+		"thread": "c",
+		"mgw-libsrt.h": "c"
 	}
 }

@@ -4,9 +4,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "mgw.h"
+#include "mgw-internal.h"
 
-class MGWApp
+class MGWApp final
 {
 public:
 	static MGWApp &GetInstance() {
@@ -17,8 +17,18 @@ public:
 
 	bool Startup(const std::string &configFile);
 	void ExitApp(void);
-
 	bool AttempToReset(void);
+	std::string &&GetAPIVersion(void);
+
+	/**< Functions */
+	int StartOutputStream(mgw_data_t *settings, mgw_data_t **result = NULL);
+	void StopOutputStream(mgw_data_t *settings);
+
+	int StartSourceStream(mgw_data_t *settings, mgw_data_t **result = NULL);
+	void StopSourceStream(mgw_data_t *settings);
+
+	int GetOutputStreamInfo(mgw_data_t *settings, mgw_data_t **result);
+	int GetSourceStreamInfo(mgw_data_t *settings, mgw_data_t **result);
 
 private:
 	MGWApp();
@@ -27,6 +37,7 @@ private:
 	MGWApp operator=(const MGWApp &) = delete;
 
 
+private:
 	/**< Data */
 	bool    started_;
 	std::unordered_map<std::string, mgw_device_t> devices_;

@@ -1019,6 +1019,7 @@ static void *_tlog_work(void *arg)
     struct tlog_log *log = NULL;
     struct tlog_log *loop_log = NULL;
 
+    pthread_setname_np(pthread_self(), "tlog: log work");
     while (1) {
         log_len = 0;
         log_end = 0;

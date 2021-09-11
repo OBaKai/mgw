@@ -221,7 +221,14 @@ struct mgw_stream {
 
 	struct mgw_source			*source;
 	struct mgw_output			*outputs_list;
+	struct mgw_output			*outputs_whitelist;
+	struct mgw_output           *outputs_blacklist;
+
 	pthread_mutex_t				outputs_mutex;
+	pthread_mutex_t				outputs_whitelist_mutex;
+    pthread_mutex_t				outputs_blacklist_mutex;
+
+	volatile bool				actived;
 };
 typedef struct mgw_stream mgw_stream_t;
 

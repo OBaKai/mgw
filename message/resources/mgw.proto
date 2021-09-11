@@ -1,0 +1,46 @@
+syntax = "proto3";
+package mgw;
+
+message Device {
+    string  type = 1;
+    string  sn = 2;
+    string  token = 3;
+}
+
+/**
+* 1. 在请求推流的时候，需要指定源通道src_channel以告知服务器
+*    该输出通道的源是哪个。
+* 2. 在请求拉流地址的时候，需要指定源通道src_channel以告知服务器
+*    创建该通道的源。此时输出通道可以不用设置，赋值为-1不可用。
+*/
+message Stream {
+    bool   enable = 1;
+    int32  src_channel = 2;
+    int32  out_channel = 3;
+    string uri = 4;
+    string code = 5;
+    string username = 6;
+    string password = 7;
+}
+
+/** 此消息结构可用于请求推流，请求拉流 */
+message StartStream {
+    Device    device = 1;
+    Stream    stream = 2;
+}
+
+message ReqResult {
+
+}
+
+message StreamInfo {
+
+}
+
+message MgwMsg {
+    oneof message {
+        StartStream start_stream    = 20;
+        ReqResult   result          = 21;
+        StreamInfo  stream_info     = 22;
+    }
+}

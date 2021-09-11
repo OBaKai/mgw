@@ -274,7 +274,7 @@ static const char *get_source_id(const char *protocol)
 mgw_source_t *mgw_source_create(struct mgw_stream *stream,
 			const char *source_name, mgw_data_t *settings)
 {
-	const char *info_id;
+	const char *info_id = NULL;
 	const char *protocol = mgw_data_get_string(settings, "protocol");
 	if (!(*protocol)) {
 		protocol = mgw_data_get_string(settings, "uri");
@@ -318,7 +318,7 @@ void mgw_source_destroy(struct mgw_source *source)
 	bmem_free(&source->audio_header);
 	bmem_free(&source->video_header);
 
-	if (source->is_private)
+	if (source->is_private && source->info.id)
 		bfree((void*)source->info.id);
 
 	bfree(source);

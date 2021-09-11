@@ -159,10 +159,10 @@ static inline void send_message(struct ws_client *client,
 			memcpy(payload+COMMON_HEAD_SIZE, body, size);
 			client->snd_size += size;
 		}
-		tlog(MGW_LOG_INFO, "Send message:%d head size:%d, body size:%d", type, COMMON_HEAD_SIZE, size);
+		tlog(MGW_LOG_INFO, "Send message:%d head size:%lu, body size:%ld", type, COMMON_HEAD_SIZE, size);
 		int ret = lws_callback_on_writable(client->wsi);
 		os_atomic_inc_long(&client->send_req_cnt);
-		tlog(MGW_LOG_INFO, "Sending message ret:%d, err:%s, req_cnt:%d", ret,
+		tlog(MGW_LOG_INFO, "Sending message ret:%d, err:%s, req_cnt:%ld", ret,
 						strerror(errno), os_atomic_load_long(&client->send_req_cnt));
 		os_atomic_set_bool(&client->snd_req, true);
 		pthread_mutex_unlock(&client->mutex);
@@ -208,7 +208,7 @@ static inline uint32_t ip_str_to_value(const char *ip)
 
 static void send_ping(struct ws_client *client)
 {
-	char ip[64] = {};
+	// char ip[64] = {};
 	ping_body_t	body = {};
 	body.port	= htons(client->info->port);
 	body.ip		= htonl(client->ip_val);//ip_str_to_value(client->ip.array);
@@ -391,7 +391,8 @@ static void receive_message(struct ws_client *client,
 		case SUBMSG_TYPE_TEXT: {
 			text_recv_body_t *text = in;
 			if (!repeated_message(client, text)) {
-				msg_resp_t resp = client->info->cb(client->info->opaque, text->recv_body.body, text->com_body.cmd_type);
+				msg_resp_t resp = client->info->cb(client->info->opaque, text->recv_body.body,
+											text->com_body.com_head.text_len, text->com_body.cmd_type);
 
 				if (text->com_body.com_head.msg_attr.bit_val.ack_req)
 					response_message(client, &resp, &text->com_body);
@@ -609,6 +610,7 @@ static void *loop_thread(void *arg)
 {
 	struct ws_client *client = arg;
 
+	os_set_thread_name("websocket-client: loop thread");
 	while (looping(client)) {
 		if (stopping(client))
 			break;

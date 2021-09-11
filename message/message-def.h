@@ -166,6 +166,13 @@ typedef struct text_recv_body {
 	text_recv_t			recv_body;
 }text_recv_body_t;
 
+
+typedef enum command_type {
+	CMD_START_STREAM		= 0,
+	CMD_STOP_STREAM			= 1,
+	CMD_REQ_SRCADDR		= 2,
+}cmd_t;
+
 #ifdef __cpluplus
 }
 #endif

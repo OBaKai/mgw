@@ -48,6 +48,8 @@ LIBS += -lpthread -lrt -ldl
 OUTPATH += $(BUILD)
 $(shell mkdir -p $(OUTPATH) > /dev/null)
 
+SHELL := /bin/bash
+
 SOURCE_FILES = $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.cpp))
 SOURCE_FILES += $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.cc))
 SOURCE_FILES += $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.c))
@@ -61,12 +63,10 @@ DEPFLAGS = -MMD -MP -MF $(OUTPATH)/$(*F).d
 #------------------------Rules Settings -----------------------------
 $(OUTPATH)/$(TARGET): $(OBJECT_FILES) 
 ifeq ($(TARGET_TYPE), "app")
-	@-echo $(OBJECT_FILES) $(SOURCE_FILES)
-	$(CXX) -o $@ -Wl,-rpath . $^ $(LDFLAGS) $(LIBS)
+	$(CXX) -Wl,-rpath . $(LDFLAGS) $(LIBS) $^ -o $@
 else
 ifeq ($(TARGET_TYPE), "shared")
-	@-echo $(OBJECT_FILES) $(SOURCE_FILES)
-	$(CC) -o $@ -shared -fPIC -rdynamic -Wl,-rpath . $^ $(LDFLAGS) $(LIBS) $(CFLAGS)
+	$(CC) -shared $(CFLAGS) -Wl,-rpath . $^ -o $@
 else
 ifeq ($(OUTTYPE),"static")
 	$(AR) -rc $@ $^
@@ -76,17 +76,15 @@ endif
 endif
 endif
 
-#	@echo make ok, output: $(OUTPATH)/$(OUTFILE)  source files: $(SOURCE_FILES) source dir: $(SRC_DIR) dependence files: $(DEPENDENCE_FILES)
-
 %.o : %.c
-	$(CC) $(LDFLAGS) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -c $(DEPFLAGS) -o $@ $<
-	
+	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) $(CPPFLAGS) -c $(DEPFLAGS) -o $@ $<
+
 %.o : %.cpp
-	$(CXX) $(LDFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) -c $(DEPFLAGS) -o $@ $<
+	$(CXX) $(CXXFLAGS) $(DEFINES) $(LDFLAGS) $(CPPFLAGS) -c $(DEPFLAGS) -o $@ $<
 
 %.o : %.cc
-	$(CXX) $(LDFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(DEFINES) -c $(DEPFLAGS) -o $@ $<
-	
+	$(CXX) $(CXXFLAGS) $(DEFINES) $(LDFLAGS) $(CPPFLAGS) -c $(DEPFLAGS) -o $@ $<
+
 -include $(DEPENDENCE_FILES)
 
 .PHONY: install

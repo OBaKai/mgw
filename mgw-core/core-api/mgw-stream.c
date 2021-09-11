@@ -4,17 +4,22 @@
 
 extern struct mgw_core *mgw;
 
-static int stop_internal(void* opaque, struct call_params *params)
+static inline bool stream_actived(mgw_stream_t *stream)
+{
+	return !!stream && os_atomic_load_bool(&stream->actived);
+}
+
+static int signal_stop_internal(void* opaque, struct call_params *params)
 {
 
 }
 
-static int reconnect_internal(void* opaque, struct call_params *params)
+static int signal_reconnect_internal(void* opaque, struct call_params *params)
 {
 
 }
 
-static int started_internal(void* opaque, struct call_params *params)
+static int signal_started_internal(void* opaque, struct call_params *params)
 {
 
 }
@@ -28,9 +33,9 @@ static bool mgw_stream_init_context(struct mgw_stream *stream,
 
 	/** signal notify handlers register */
 	proc_handler_t *handler = proc_handler_create(stream);
-	proc_handler_add(handler, "stop", stop_internal);
-	proc_handler_add(handler, "reconnect", reconnect_internal);
-	proc_handler_add(handler, "started", started_internal);
+	proc_handler_add(handler, "stop",		signal_stop_internal);
+	proc_handler_add(handler, "started",	signal_started_internal);
+	proc_handler_add(handler, "reconnect",	signal_reconnect_internal);
 
 	return true;
 }
@@ -61,6 +66,10 @@ mgw_stream_t *mgw_stream_create(mgw_device_t *device,
 	bool is_private = mgw_data_get_bool(settings, "is_private");
 	struct mgw_stream *stream = bzalloc(sizeof(struct mgw_stream));
 	if (0 != pthread_mutex_init(&stream->outputs_mutex, NULL))
+		goto error;
+	if (0 != pthread_mutex_init(&stream->outputs_whitelist_mutex, NULL))
+		goto error;
+	if (0 != pthread_mutex_init(&stream->outputs_blacklist_mutex, NULL))
 		goto error;
 
 	if (!mgw_stream_init_context(stream, settings, stream_name, is_private))
@@ -131,6 +140,11 @@ const char *mgw_stream_get_name(const mgw_stream_t *stream)
 	return !!stream ? stream->context.obj_name : NULL;
 }
 
+bool mgw_stream_has_source(mgw_stream_t *stream)
+{
+	return !!stream && !!stream->source;
+}
+
 int mgw_stream_add_source(mgw_stream_t *stream, mgw_data_t *source_settings)
 {
 	if (!stream || !source_settings)
@@ -151,6 +165,22 @@ int mgw_stream_add_source(mgw_stream_t *stream, mgw_data_t *source_settings)
 		}
 	}
 
+	os_atomic_set_bool(&stream->actived, true);
+
+	/**< start all shitelist outputs and save them to outputlist */
+	mgw_output_t *output = stream->outputs_whitelist;
+	while (output) {
+		mgw_output_t *next = output->context.next;
+		if (!mgw_output_start(output))
+			tlog(TLOG_ERROR, "Tried to start output failed!");
+
+		mgw_context_data_insert(output, &stream->outputs_mutex, stream->outputs_list);
+		mgw_context_data_remove(output);
+
+		output = next;
+	}
+
+	stream->outputs_whitelist = NULL;
 	return mgw_src_err(MGW_ERR_SUCCESS);
 }
 
@@ -163,6 +193,7 @@ void mgw_stream_release_source(mgw_stream_t *stream)
 
 	mgw_source_release(stream->source);
 	stream->source = NULL;
+	os_atomic_set_bool(&stream->actived, false);
 }
 
 int mgw_stream_add_output(mgw_stream_t *stream, mgw_data_t *output_settings)
@@ -173,14 +204,21 @@ int mgw_stream_add_output(mgw_stream_t *stream, mgw_data_t *output_settings)
 
 	mgw_output_t *output = NULL;
 	const char *output_name	= mgw_data_get_string(output_settings, "output_name");
-	if (stream->outputs_list) {
-		if ((output = mgw_get_output_by_name(
-				stream->outputs_list, &stream->outputs_mutex, output_name))) {
-			tlog(TLOG_DEBUG, "Stream[%s] aready have output[%s]\n",
-									stream->context.obj_name, output_name);
-			mgw_output_release(output);
-			return mgw_out_err(MGW_ERR_EXISTED);
-		}
+	if (stream->outputs_list &&
+		(output = mgw_get_output_by_name(stream->outputs_list,
+							&stream->outputs_mutex, output_name))) {
+		tlog(TLOG_DEBUG, "Stream[%s] aready have output[%s]\n",
+								stream->context.obj_name, output_name);
+		mgw_output_release(output);
+		return mgw_out_err(MGW_ERR_EXISTED);
+	}
+	if (stream->outputs_whitelist &&
+		(output = mgw_get_output_by_name(stream->outputs_whitelist,
+							&stream->outputs_whitelist_mutex, output_name))) {
+		tlog(TLOG_DEBUG, "Stream[%s] aready have output[%s]\n",
+								stream->context.obj_name, output_name);
+		mgw_output_release(output);
+		return mgw_out_err(MGW_ERR_EXISTED);
 	}
 
 	if (!(output = mgw_output_create(stream, output_name, output_settings))) {
@@ -188,16 +226,17 @@ int mgw_stream_add_output(mgw_stream_t *stream, mgw_data_t *output_settings)
 		return mgw_out_err(MGW_ERR_INVALID_RES);
 	}
 
-	if (!(success = mgw_output_start(output))) {
+	if (stream_actived(stream) && !!stream->source &&
+		!(success = mgw_output_start(output))) {
+
 		int result = output->last_error_status;
 		tlog(TLOG_INFO, "Tried to start output:%s failed, code:%d, try again!", output_name, result);
 		mgw_output_destroy(output);
 		return mgw_out_err(result);
 	}
 
-	if (!stream->outputs_list)
-		stream->outputs_list = output;
-
+	// if (!stream->outputs_list)
+	// 	stream->outputs_list = output;
 	return mgw_out_err(MGW_ERR_SUCCESS);
 }
 

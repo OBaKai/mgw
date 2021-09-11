@@ -1,10 +1,12 @@
 #include "message.h"
+#include "mgw.pb.h"
+#include "mgw-app.h"
 #include "google/protobuf/util/json_util.h"
 
 extern "C" {
-#include "mgw.h"
 #include "util/bmem.h"
 #include "util/tlog.h"
+#include "util/platform.h"
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 }
@@ -39,8 +41,8 @@ struct user_infos {
 };
 
 Message::Message()
-	:settings_(NULL),
-	curl_(curl_easy_init()),
+	:curl_(curl_easy_init()),
+	settings_(NULL),
 	infos_(new user_infos)
 {
 	signal(SIGPIPE, SIG_IGN);
@@ -63,22 +65,9 @@ Message::~Message()
 		wsclient_destroy((void*)ws_client_);
 }
 
-msg_status Message::Register(const std::string &configPath)
+inline msg_status Message::RegisterWrap(void)
 {
-
-	if (configPath.empty())
-		return msg_status::MSG_STATUS_PARMER_INVALID;
-	if (registered_)
-		return msg_status::MSG_STATUS_EXISTED;
-
-	if (!(settings_ = mgw_data_create_from_json_file(configPath.data()))) {
-		if (!(settings_ = mgw_data_create_from_json(configPath.data()))) {
-			std::cout << "Configuration :" << configPath << " invalid, please check!" << std::endl;
-			return msg_status::MSG_STATUS_BAD_PATH;
-		}
-	}
-
-	/**< Get configuration from file */
+		/**< Get configuration from file */
 #ifdef DEBUG
 	const char *api_key = "test_api_key", *secret_key = "test_secret_key", *host = "test_host";
 #else
@@ -92,7 +81,7 @@ msg_status Message::Register(const std::string &configPath)
 	infos_->type = mgw_data_get_string(settings_, "type");
 
 	/**< Get version internal */
-	infos_->version = mgw_get_version_string();
+	infos_->version = MGWApp::GetInstance().GetAPIVersion();
 
 	/**< Start to register proccessing... */
 	/**< 1.AccessRequest  2.AuthenRequest  3.RegisterInternal */
@@ -120,6 +109,34 @@ msg_status Message::Register(const std::string &configPath)
 	return msg_status::MSG_STATUS_SUCCESS;
 }
 
+msg_status Message::Register(const std::string &config)
+{
+	if (config.empty())
+		return msg_status::MSG_STATUS_PARMER_INVALID;
+	if (registered_)
+		return msg_status::MSG_STATUS_EXISTED;
+
+	if (os_file_exists(config.data()))
+		settings_ = mgw_data_create_from_json_file(config.data());
+	else
+		settings_ = mgw_data_create_from_json(config.data());
+
+	if (!settings_) {
+		std::cout << "Configuration :" << config << " invalid, please check!" << std::endl;
+		return msg_status::MSG_STATUS_BAD_PATH;
+	}
+	return RegisterWrap();
+}
+
+msg_status Message::Register(mgw_data_t *settings)
+{
+	if (!settings)
+		return msg_status::MSG_STATUS_PARMER_INVALID;
+
+	mgw_data_apply(settings_, settings);
+	return RegisterWrap();
+}
+
 void Message::UnRegister(void)
 {
 }
@@ -131,7 +148,7 @@ static int curl_req_result(const void *ptr, size_t s, size_t n, void *p)
 	return str->size();
 }
 
-static std::string SendAPIReqMessage(CURL *curl, const std::string &host,
+std::string Message::SendAPIReqMessage(CURL *curl, const std::string &host,
 				const std::string &uri, const std::string &body)
 {
 	CURLcode ret = CURLE_OK;
@@ -322,38 +339,11 @@ bool Message::RegisterInternal(void)
 	return true;
 }
 
-static mgw_data_t *get_info_from_pb(const char *data, cmd_t cmd)
-{
-	// std::string reqStr;
-	// google::protobuf::util::MessageToJsonString(msg, &reqStr);
-
-	// if (!reqStr.empty())
-	// 	return mgw_data_create_from_json(reqStr.data());
-	// else
-	// 	return NULL;
-	return NULL;
-}
-
-static msg_resp_t wsclient_callback(void *opaque, char *data, cmd_t cmd)
-{
-	msg_resp_t resp = {};
-	struct ws_client *client = (struct ws_client *)opaque;
-	if (!client || !data) {
-		resp.status = STATUS_PARAMER_INVALID;
-		return resp;
-	}
-
-	if (!get_info_from_pb((const char *)data, cmd))
-		resp.status = STATUS_PARSE_ERROR;
-
-	return resp;
-}
-
 bool Message::InitMessageEnv(void)
 {
 	struct wsclient_info *ws_info = (struct wsclient_info*)bzalloc(sizeof(struct wsclient_info));
 	ws_info->access_token = bstrdup(infos_->access_token.data());
-	ws_info->cb = wsclient_callback;
+	ws_info->cb = Message::WSClientCallback;
 	ws_info->hb_interval = infos_->hb_interval;
 	ws_info->opaque = (void*)this;
 	ws_info->uri = bstrdup(infos_->ws_uri.data());
@@ -373,17 +363,125 @@ bool Message::InitMessageEnv(void)
 	return true;
 }
 
-// static char *serial_message_to_pb(mgw_data_t *data, int cmd)
-// {
-// 	google::protobuf::StringPiece snd_str;
-// 	google::protobuf::util::JsonStringToMessage(snd_str, Message *message);
-// }
+msg_resp_t Message::WSClientCallback(void *opaque, char *data, size_t size, cmd_t cmd)
+{
+	msg_resp_t resp = {};
+	Message *msg = static_cast<Message*>(opaque);
+	if (!msg || !data) {
+		resp.status = MSG_STATUS_PARMER_INVALID;
+		return resp;
+	}
+
+	mgw_data_t *msg_data = msg->DeserializeMessageFromPb((const char *)data, size, cmd);
+	if (!msg_data) {
+		resp.status = MSG_STATUS_PARSE_ERROR;
+		return resp;
+	}
+
+	MGWApp &app = MGWApp::GetInstance();
+	switch (cmd) {
+		case CMD_START_STREAM: {
+			resp.status = app.StartOutputStream(msg_data);
+			break;
+		}
+		case CMD_REQ_SRCADDR: {
+			resp.status = app.StartSourceStream(msg_data);
+			break;
+		}
+		default: {
+			tlog(TLOG_ERROR, "Couldn't support this command:%d", cmd);
+			resp.status = MSG_STATUS_NOTSUPPORTED;
+			break;
+		}
+	}
+
+	return resp;
+}
 
 int Message::SendMessage(mgw_data_t *data, int cmd)
 {
+	if (!data) return MSG_STATUS_PARMER_INVALID;
 
-	// if (STATUS_SUCCESS != wsclient_send(ws_client_, const char *buf, size_t size)) {
+	int ret = MSG_STATUS_SUCCESS;
+	std::string snd_data = SerializeMessageToPb(data, cmd);
+	if (STATUS_SUCCESS != (ret = wsclient_send(ws_client_,
+					snd_data.data(), snd_data.size()))) {
+		tlog(TLOG_ERROR, "Tried to send message:%d failed", cmd);
+	}
 
-	// }
-	return 0;
+	return ret;
+}
+
+/** ---------------------------------------------------------------------- */
+/**< Call functions  */
+
+std::string &&Message::SerializeMessageToPb(mgw_data_t *data, int cmd)
+{
+	using namespace google::protobuf;
+
+	StringPiece snd_str = StringPiece(mgw_data_get_json(data));
+	if (snd_str.empty()) return NULL;
+
+	google::protobuf::Message *msg_impl = nullptr;
+	mgw::MgwMsg *msg = new mgw::MgwMsg();
+	switch (cmd) {
+		case CMD_START_STREAM: {
+			msg_impl = msg->mutable_start_stream();
+			break;
+		}
+		case CMD_REQ_SRCADDR: {
+
+			break;
+		}
+		default: {
+			tlog(TLOG_ERROR, "Couldn't support this command:%d", cmd);
+			break;
+		}
+	}
+	if (!msg_impl) {
+		cpp_safe_delete(msg);
+		return NULL;
+	}
+
+	tlog(TLOG_INFO, "Send message: %s", snd_str.data());
+	google::protobuf::util::JsonStringToMessage(snd_str, msg_impl);
+	size_t data_size = msg->ByteSizeLong();
+	void *serial_data = bzalloc(data_size);
+	if (!serial_data || data_size <= 1) {
+		bfree(serial_data);
+		return NULL;
+	}
+
+	msg->SerializePartialToArray(serial_data, data_size);
+	std::string result = std::string((const char *)serial_data, msg->ByteSizeLong());
+	cpp_safe_delete(msg);
+	return std::move(result);
+}
+
+mgw_data_t *Message::DeserializeMessageFromPb(const char *data, size_t size, int cmd)
+{
+	using namespace google::protobuf;
+
+	const google::protobuf::Message *protobuf_msg = nullptr;
+	mgw::MgwMsg *msg = new mgw::MgwMsg();
+
+	msg->ParseFromArray(data, size);
+	/**< Check what message is */
+	if (msg->has_start_stream())
+		protobuf_msg = &msg->start_stream();
+
+	if (!protobuf_msg) {
+		cpp_safe_delete(msg);
+		return NULL;
+	}
+
+	mgw_data_t *msg_data = NULL;
+	std::string reqStr;
+	google::protobuf::util::MessageToJsonString(*protobuf_msg, &reqStr);
+	if (!reqStr.empty())
+		msg_data = mgw_data_create_from_json(reqStr.data());
+
+	tlog(TLOG_INFO, "Received msg: %s", reqStr.data());
+	cpp_safe_delete(msg);
+	return msg_data;
 }

@@ -465,6 +465,7 @@ static bool send_key_frame(struct rtmp_stream *stream, struct encoder_packet *pa
 	return send_packet_internal(stream, packet, false, packet->track_idx);
 }
 
+/**< Modify avcc format to annexB format */
 static inline bool send_packet(struct rtmp_stream *stream, struct encoder_packet *packet)
 {
 	if (packet->type == ENCODER_AUDIO) {
@@ -501,7 +502,7 @@ static inline bool send_packet(struct rtmp_stream *stream, struct encoder_packet
 static void *send_thread(void *data)
 {
 	struct rtmp_stream *stream = data;
-	int ret = 0, sleep_freq = 4;
+	int ret = 0, sleep_freq = 6;
 	bool success = false;
 
 #define SET_DISCONNECT(stream) do { \
@@ -520,12 +521,9 @@ static void *send_thread(void *data)
 		packet.data = stream->frame_buffer + MGW_AVCC_HEADER_SIZE;
 		if (0 >= (ret = stream->output->get_encoder_packet(
 								stream->output, &packet))) {
-			usleep(5 * 1000);
+			usleep(1 * 1000);
             continue;
         }
-
-		// if (ENCODER_AUDIO == packet.type)
-		// 	tlog(TLOG_DEBUG, "rtmp stream receive a audio packet, size:%d", packet.size);
 
 		if (!stream->sent_headers ||
 			(FRAME_PRIORITY_LOW == packet.priority &&
