@@ -193,6 +193,17 @@ void mgw_stream_release_all(mgw_stream_t *stream_list)
 	stream_list = NULL;
 }
 
+void mgw_device_release_all(mgw_device_t *device_list)
+{
+	mgw_device_t *device = device_list;
+	while (device) {
+		mgw_device_t *next = (mgw_stream_t *)device->context.next;
+		mgw_device_release(device);
+		device = next;
+	}
+	device_list = NULL;
+}
+
 static void free_mgw_data(void)
 {
 	struct mgw_core_data *data = &mgw->data;
@@ -221,6 +232,7 @@ void mgw_shutdown(void)
 
 	destroy_all_services();
 	mgw_stream_release_all(mgw->data.priv_streams_list);
+	mgw_device_release_all(mgw->data.devices_list);
 	free_mgw_data();
 
 	bfree(mgw);

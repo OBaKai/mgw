@@ -3,8 +3,6 @@
 #include "message.h"
 #include "mgw-events.h"
 
-#include <memory>
-
 /**< C header files */
 extern "C" {
 #include "mgw.h"
@@ -16,7 +14,7 @@ extern "C" {
 #include <unistd.h>
 }
 
-#define CONFIG_MESSAGE			1
+// #define CONFIG_MESSAGE			1
 
 MGWApp::MGWApp():
 	started_(false)

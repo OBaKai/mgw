@@ -360,6 +360,7 @@ static bool send_meta_data(struct rtmp_stream *stream, size_t idx)
 	if (success) {
 		success = RTMP_Write(&stream->rtmp, (char*)meta_data,
 				(int)meta_data_size, (int)idx) >= 0;
+		mgw_data_release((mgw_data_t*)params.out);
 		bfree(meta_data);
 	}
 
@@ -387,7 +388,7 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 	int samplesize = mgw_data_get_int((mgw_data_t*)params.out, "samplesize");
 	if (samplesize == 8) header[0] &= 0xfd;
 	if (channels == 1) header[0] &= 0xfe;
-	bfree(params.out);
+	mgw_data_release((mgw_data_t*)params.out);
 
 	if (0 != do_source_proc_handler(stream, "get_audio_header", &params)) {
 		tlog(TLOG_ERROR, "Couldn't get audio header!\n");
@@ -419,7 +420,7 @@ static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
 	}
 	// must be AVCDecoderConfigurationRecord -- avc
 	packet.size = params.out_size;
-	packet.data = bmemdup(params.out, packet.size);
+	packet.data = params.out;
 	return send_packet_internal(stream, &packet, true, 0);
 }
 

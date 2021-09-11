@@ -32,7 +32,7 @@ static bool mgw_stream_init_context(struct mgw_stream *stream,
 		return false;
 
 	/** signal notify handlers register */
-	proc_handler_t *handler = proc_handler_create(stream);
+	proc_handler_t *handler = stream->context.procs;
 	proc_handler_add(handler, "stop",		signal_stop_internal);
 	proc_handler_add(handler, "started",	signal_started_internal);
 	proc_handler_add(handler, "reconnect",	signal_reconnect_internal);
@@ -48,8 +48,14 @@ static void mgw_stream_destroy(struct mgw_stream *stream)
 		mgw_source_release(stream->source);
 	if (stream->outputs_list)
 		mgw_output_release_all(stream->outputs_list);
+	if (stream->outputs_whitelist)
+		mgw_output_release_all(stream->outputs_whitelist);
+	if (stream->outputs_blacklist)
+		mgw_output_release_all(stream->outputs_blacklist);
 
 	pthread_mutex_destroy(&stream->outputs_mutex);
+	pthread_mutex_destroy(&stream->outputs_whitelist_mutex);
+	pthread_mutex_destroy(&stream->outputs_blacklist_mutex);
 	mgw_context_data_free(&stream->context);
 
 	bfree(stream);

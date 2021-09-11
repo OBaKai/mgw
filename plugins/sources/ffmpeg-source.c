@@ -173,7 +173,7 @@ static int create_ffmpeg_media(struct ffmpeg_source *s, const char *uri)
 		goto error;
 	}
 
-	tlog(TLOG_INFO, "Audio stream codec:0x%x, sample_rate:%d Hz, "\
+	tlog(TLOG_INFO, "Audio stream codec:%d, sample_rate:%d Hz, "\
 					"channels:%d, bits_per_sample:%d bits, bit_rate:%"PRId64" kb/s",
 					s->ast->codecpar->codec_id, s->ast->codecpar->sample_rate,
 					s->ast->codecpar->channels, s->ast->codecpar->bits_per_coded_sample,
@@ -238,17 +238,12 @@ static void *ffmpeg_source_create(mgw_data_t *setting, mgw_source_t *source)
 
 	s->save_to_file = mgw_data_get_bool(setting, "save_file");
 	const char *uri = mgw_data_get_string(setting, "uri");
-	// s->save_to_file = true;
 	if (!uri) {
 		tlog(TLOG_DEBUG, "couldn't find uri!");
 		goto error;
 	}
 
-	if (0 != create_ffmpeg_media(s, uri)) {
-		tlog(TLOG_ERROR, "Open uri:%s failed, error:%s", uri, av_err2str(ret));
-		goto error;
-	}
-
+	dstr_copy(&s->uri, uri);
 	return s;
 
 error:
@@ -264,6 +259,11 @@ static void *read_thread(void *arg)
 	int ret;
 	char *audio_buffer = bzalloc(AAC_SAMPLE_SIZE_MAX);
 	uint32_t frame_cnt = 0;
+
+	if (0 != create_ffmpeg_media(s, s->uri.array)) {
+		tlog(TLOG_ERROR, "Open uri:%s failed, error:%s", s->uri.array, av_err2str(ret));
+		goto error;
+	}
 
 	os_set_thread_name("ffmpeg-source: read thread");
 	while (actived(s)) {
@@ -334,6 +334,7 @@ static void *read_thread(void *arg)
 	else
 		tlog(TLOG_INFO, "User disconnected");
 
+error:
 	if (!stopping(s) && os_atomic_load_bool(&s->disconnected))
 		pthread_detach(s->receive_thread);
 
