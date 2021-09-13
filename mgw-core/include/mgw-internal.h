@@ -137,10 +137,19 @@ struct mgw_source {
 	volatile bool               enabled;
 	volatile bool				actived;
 
-	os_event_t					*stopping_event;
-	os_event_t					*reconnect_stop_event;
+	int                         reconnect_retry_sec;
+	int                         reconnect_retry_max;
+	int                         reconnect_retries;
+	int                         reconnect_retry_cur_sec;
+	pthread_t                   reconnect_thread;
+	os_event_t                  *reconnect_stop_event;
+	volatile bool               reconnecting;
+	volatile bool               reconnect_thread_active;
 
+	os_event_t					*stopping_event;
+	pthread_t                   stop_thread;
 	int							stop_code;
+    int                         last_error_status;
 	void						*buffer;
 
 	struct bmem					audio_header, video_header;
@@ -215,20 +224,20 @@ struct mgw_service {
 /* ----------------------------------------- */
 /* Stream */
 struct mgw_stream {
-	struct mgw_context_data		context;
-	struct mgw_ref				*control;
-	struct mgw_device			*parent_device;
+    struct mgw_context_data		context;
+    struct mgw_ref				*control;
+    struct mgw_device			*parent_device;
 
-	struct mgw_source			*source;
-	struct mgw_output			*outputs_list;
-	struct mgw_output			*outputs_whitelist;
-	struct mgw_output           *outputs_blacklist;
+    struct mgw_source			*source;
+    struct mgw_output			*outputs_list;
+    struct mgw_output			*outputs_whitelist;
+    struct mgw_output           *outputs_blacklist;
 
-	pthread_mutex_t				outputs_mutex;
-	pthread_mutex_t				outputs_whitelist_mutex;
+    pthread_mutex_t				outputs_mutex;
+    pthread_mutex_t				outputs_whitelist_mutex;
     pthread_mutex_t				outputs_blacklist_mutex;
 
-	volatile bool				actived;
+    volatile bool				actived;
 };
 typedef struct mgw_stream mgw_stream_t;
 
@@ -240,6 +249,8 @@ struct mgw_device {
 
 	struct mgw_stream			*stream_list;
 	pthread_mutex_t				stream_mutex;
+
+	cb_handle_t					proc_cb_handle;
 };
 typedef struct mgw_device mgw_device_t;
 

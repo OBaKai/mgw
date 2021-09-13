@@ -209,7 +209,7 @@ static void mpegts_destroy(void *data)
 		blog(MGW_LOG_INFO, "mpegts write trailer!");
 	}
 
-	if (!(ts->flags & MGW_FORMAT_NO_FILE)) {
+	if ((ts->flags & MGW_FORMAT_NO_FILE)) {
 		av_freep(&ts->fmt_ctx->pb->buffer);
 		avio_context_free(&ts->fmt_ctx->pb);
 		avio_closep(&ts->fmt_ctx->pb);

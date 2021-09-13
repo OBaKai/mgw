@@ -36,11 +36,11 @@ void darray_free(struct darray *dst)
 	dst->capacity = 0;
 }
 
-static size_t darray_alloc_size(const size_t element_size,
-		const struct darray *da)
-{
-	return element_size*da->num;
-}
+// static size_t darray_alloc_size(const size_t element_size,
+// 		const struct darray *da)
+// {
+// 	return element_size*da->num;
+// }
 
 static void *darray_item(const size_t element_size,
 		const struct darray *da, size_t idx)

@@ -107,18 +107,6 @@ error:
     return NULL;
 }
 
-struct source_param *mgw_rb_get_source_param(void *data)
-{
-    struct ring_buffer *rb = data;
-	SmemoryHead *shared_head = NULL;
-
-	if (!rb || !rb->bc->position.pstuHead)
-		return NULL;
-
-	shared_head = (SmemoryHead *)rb->bc->position.pstuHead;
-    return (struct source_param *)shared_head->priv_data;
-}
-
 void mgw_rb_destroy(void *data)
 {
 	struct ring_buffer *rb = data;

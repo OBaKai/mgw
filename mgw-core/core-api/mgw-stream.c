@@ -9,19 +9,49 @@ static inline bool stream_actived(mgw_stream_t *stream)
 	return !!stream && os_atomic_load_bool(&stream->actived);
 }
 
+static inline void signal_stream_status(mgw_stream_t *stream,
+						int status, struct call_params *params)
+{
+	int type = MGW_STREAM_NONE;
+	if (!strncasecmp(params->in, "source", 6))
+		type = MGW_STREAM_SOURCE;
+	else if (!strncasecmp(params->in, "output", 6))
+		type = MGW_STREAM_OUTPUT;
+
+	mgw_device_proc_cb_handle(stream->parent_device,
+			type, status, params->in, params->in_size);
+}
+
 static int signal_stop_internal(void* opaque, struct call_params *params)
 {
+	mgw_stream_t *stream = opaque;
+	if (!!stream && stream->parent_device)
+		signal_stream_status(stream, MGW_STREAM_STATUS_STOPED, params);
+	return 0;
+}
 
+static int signal_connecting_internal(void* opaque, struct call_params *params)
+{
+	mgw_stream_t *stream = opaque;
+	if (!!stream && !!stream->parent_device)
+		signal_stream_status(stream, MGW_STREAM_STATUS_CONNECTING, params);
+	return 0;
 }
 
 static int signal_reconnect_internal(void* opaque, struct call_params *params)
 {
-
+	mgw_stream_t *stream = opaque;
+	if (!!stream && !!stream->parent_device)
+		signal_stream_status(stream, MGW_STREAM_STATUS_RECONNECTING, params);
+	return 0;
 }
 
 static int signal_started_internal(void* opaque, struct call_params *params)
 {
-
+	mgw_stream_t *stream = opaque;
+	if (!!stream && !!stream->parent_device)
+		signal_stream_status(stream, MGW_STREAM_STATUS_STREAMING, params);
+	return 0;
 }
 
 static bool mgw_stream_init_context(struct mgw_stream *stream,
@@ -32,10 +62,11 @@ static bool mgw_stream_init_context(struct mgw_stream *stream,
 		return false;
 
 	/** signal notify handlers register */
-	proc_handler_t *handler = stream->context.procs;
-	proc_handler_add(handler, "stop",		signal_stop_internal);
-	proc_handler_add(handler, "started",	signal_started_internal);
-	proc_handler_add(handler, "reconnect",	signal_reconnect_internal);
+    proc_handler_t *handler = stream->context.procs;
+    proc_handler_add(handler, "signal_stop",        signal_stop_internal);
+    proc_handler_add(handler, "signal_started",     signal_started_internal);
+    proc_handler_add(handler, "signal_connecting",  signal_connecting_internal);
+    proc_handler_add(handler, "signal_reconnect",   signal_reconnect_internal);
 
 	return true;
 }
@@ -77,7 +108,6 @@ mgw_stream_t *mgw_stream_create(mgw_device_t *device,
 		goto error;
 	if (0 != pthread_mutex_init(&stream->outputs_blacklist_mutex, NULL))
 		goto error;
-
 	if (!mgw_stream_init_context(stream, settings, stream_name, is_private))
 		goto error;
 
@@ -125,7 +155,7 @@ void mgw_stream_release(mgw_stream_t *stream)
 mgw_stream_t *mgw_stream_get_ref(mgw_stream_t *stream)
 {
 	if (!stream) return NULL;
-	mgw_get_ref(stream->control) ?
+	return mgw_get_ref(stream->control) ?
 		(mgw_stream_t*)stream->control->data : NULL;
 }
 
@@ -138,7 +168,7 @@ mgw_stream_t *mgw_get_weak_stream(mgw_stream_t *stream)
 bool mgw_stream_references_stream(struct mgw_ref *ref,
 		mgw_stream_t *stream)
 {
-	return ref && stream && stream == stream->control;
+	return ref && stream && stream == stream->control->data;
 }
 
 const char *mgw_stream_get_name(const mgw_stream_t *stream)
@@ -156,7 +186,9 @@ int mgw_stream_add_source(mgw_stream_t *stream, mgw_data_t *source_settings)
 	if (!stream || !source_settings)
 		return MGW_ERR_EPARAM;
 	if (stream->source) {
-		tlog(TLOG_DEBUG, "Stream[%s] aready have a source[%s]\n");
+		tlog(TLOG_DEBUG, "Stream[%s] aready have a source[%s]\n",
+						stream->context.obj_name,
+						stream->source->context.obj_name);
 		return mgw_src_err(MGW_ERR_INVALID_RES);
 	}
 
@@ -176,12 +208,12 @@ int mgw_stream_add_source(mgw_stream_t *stream, mgw_data_t *source_settings)
 	/**< start all shitelist outputs and save them to outputlist */
 	mgw_output_t *output = stream->outputs_whitelist;
 	while (output) {
-		mgw_output_t *next = output->context.next;
+		mgw_output_t *next = (mgw_output_t*)output->context.next;
 		if (!mgw_output_start(output))
 			tlog(TLOG_ERROR, "Tried to start output failed!");
 
-		mgw_context_data_insert(output, &stream->outputs_mutex, stream->outputs_list);
-		mgw_context_data_remove(output);
+		mgw_context_data_insert(&output->context, &stream->outputs_mutex, stream->outputs_list);
+		mgw_context_data_remove(&output->context);
 
 		output = next;
 	}
@@ -267,11 +299,13 @@ void mgw_stream_release_output_by_name(mgw_stream_t *stream, const char *name)
 mgw_data_t *mgw_stream_get_output_info(mgw_stream_t *stream, const char *output_name)
 {
 
+	return NULL;
 }
 
 mgw_data_t *mgw_stream_get_output_setting(mgw_stream_t *stream, const char *id)
 {
 
+	return NULL;
 }
 
 bool mgw_stream_send_packet(mgw_stream_t *stream, struct encoder_packet *packet)

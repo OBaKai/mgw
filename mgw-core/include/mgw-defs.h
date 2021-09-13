@@ -49,13 +49,6 @@
 #define MGW_UNSUPPORTED    -6
 #define MGW_NO_SPACE       -7
 
-/**< Output stream status for user */
-#define MGW_OUTPUT_STATUS_STOPED			0
-#define MGW_OUTPUT_STATUS_CONNECTING		1
-#define MGW_OUTPUT_STATUS_RECONNECTING		2
-#define MGW_OUTPUT_STATUS_CONNECTFAILED		3
-#define MGW_OUTPUT_STATUS_STREAMING			4
-
 /**< For user, those field must be set to 
  *   mgw_data_t for settings to start a stream output
  * */
@@ -75,6 +68,21 @@
 #define MGW_OUTPUT_NETTYPE_IP		"ip"
 #define MGW_OUTPUT_NETTYPE_NETCARD	"net_card"
 
+typedef void (*cb_handle_t)(int type, int status, void *data, size_t size);
+
+enum mgw_stream_type {
+    MGW_STREAM_NONE,
+	MGW_STREAM_SOURCE,
+	MGW_STREAM_OUTPUT
+};
+
+enum mgw_stream_status {
+    MGW_STREAM_STATUS_STOPED,
+    MGW_STREAM_STATUS_CONNECTING,
+    MGW_STREAM_STATUS_RECONNECTING,
+    MGW_STREAM_STATUS_CONNECTFAILED,
+    MGW_STREAM_STATUS_STREAMING,
+};
 
 enum mgw_obj_type {
 	MGW_OBJ_TYPE_INVALID,
@@ -92,6 +100,7 @@ enum mgw_err_status {
 	MGW_ERR_EPARAM,			/**< error parameter */
 	MGW_ERR_INVALID_RES,	/**< Invalid resource */
 	MGW_ERR_EXISTED,		/**< Resource already existed */
+	MGW_ERR_NOT_EXIST,
 	MGW_ERR_ECREATE,
 	MGW_ERR_ESTARTING,		/**< Start a resource failed */
 	MGW_ERR_BAD_PATH,

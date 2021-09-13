@@ -21,7 +21,7 @@ static bool inline mgw_output_active(struct mgw_output *output)
             os_atomic_load_bool(&output->actived);
 }
 
-static int output_actived(void *opaque, call_params_t *call_params)
+static int output_is_actived(void *opaque, call_params_t *call_params)
 {
 	return mgw_output_active((mgw_output_t*)opaque);
 }
@@ -58,12 +58,14 @@ static proc_handler_t *output_get_source_proc_handler(mgw_output_t *output)
 }
 
 static inline int output_proc_handler(mgw_output_t *output,
-					const char *name, call_params_t *params)
+					const char *func, call_params_t *params)
 {
 	proc_handler_t *procs = mgw_stream_get_procs(output->parent_stream);
-	params->in = output->context.obj_name;
-	params->in_size = strlen(params->in) + 1;
-	return proc_handler_do(procs, name, params);
+	params->in = bstrdup(output->context.obj_name);
+	params->in_size = strlen(params->in);
+	int ret = proc_handler_do(procs, func, params);
+	bfree(params->in);
+	return ret;
 }
 
 static bool mgw_output_actual_start(mgw_output_t *output)
@@ -75,7 +77,7 @@ static bool mgw_output_actual_start(mgw_output_t *output)
 	if (output->valid && output->context.info_impl)
 		if ((success = output->info.start(output->context.info_impl))) {
 			call_params_t params = {};
-			output_proc_handler(output, "started", &params);
+			output_proc_handler(output, "signal_connecting", &params);
 		}
 
 	os_atomic_set_bool(&output->actived, success);
@@ -112,7 +114,7 @@ static void *reconnect_thread(void *param)
 	output->reconnect_thread_active = true;
 	{
 		call_params_t params = {};
-		output_proc_handler(output, "reconnect", &params);
+		output_proc_handler(output, "signal_reconnect", &params);
 	}
 
 	if (os_event_timedwait(output->reconnect_stop_event, ms) == ETIMEDOUT)
@@ -136,7 +138,7 @@ static void *stop_thread(void *arg)
 	tlog(TLOG_INFO, "stop output:%s internal!\n", output->context.info_id);
 	{
 		call_params_t params = {};
-		output_proc_handler(output, "stop", &params);
+		output_proc_handler(output, "signal_stop", &params);
 	}
 
 	return NULL;
@@ -205,7 +207,7 @@ static int output_signal_stop(void *opaque, struct call_params *params)
 {
 	mgw_output_t *output = opaque;
 	if (!output || !params || !params->in)
-		return;
+		return mgw_out_err(MGW_ERR_EPARAM);
 
 	output->stop_code = *((int*)params->in);
 	if (!output->reconnect_retries && output->stop_code != MGW_DISCONNECTED)
@@ -223,6 +225,13 @@ static int output_signal_stop(void *opaque, struct call_params *params)
 		os_atomic_set_bool(&output->actived, false);
         blog(MGW_LOG_INFO, "signal stop output");
 	}
+
+	return 0;
+}
+
+static int output_signal_started(void *opaque, struct call_params *params)
+{
+	return output_proc_handler((mgw_output_t*)opaque, "signal_started", params);
 }
 
 static int output_source_ready(void *opaque, struct call_params *params)
@@ -288,8 +297,9 @@ static bool mgw_output_init(struct mgw_output *output)
 		mgw_data_release(buf_settings);
 
 	/** initlialize callback */
-	proc_handler_add(output->context.procs, "actived", 			output_actived);
+	proc_handler_add(output->context.procs, "is_actived", 		output_is_actived);
 	proc_handler_add(output->context.procs, "signal_stop",		output_signal_stop);
+	proc_handler_add(output->context.procs, "signal_started",	output_signal_started);
 	proc_handler_add(output->context.procs, "source_ready",		output_source_ready);
 
 	output->get_encoder_packet		= output_get_encoder_packet;
@@ -461,14 +471,14 @@ mgw_data_t *mgw_output_get_state(mgw_output_t *output)
 
 	int push_state = 0;
 	if (!output_source_ready(output, NULL))
-		push_state = MGW_OUTPUT_STATUS_STOPED;
+		push_state = MGW_STREAM_STATUS_STOPED;
 	else if (mgw_output_active(output))
-		push_state = MGW_OUTPUT_STATUS_STREAMING;
+		push_state = MGW_STREAM_STATUS_STREAMING;
 	else if (reconnecting(output))
-		push_state = MGW_OUTPUT_STATUS_RECONNECTING;
+		push_state = MGW_STREAM_STATUS_RECONNECTING;
 	else if (output_source_ready(output, NULL) &&
 			!mgw_output_active(output))
-		push_state = MGW_OUTPUT_STATUS_CONNECTING;
+		push_state = MGW_STREAM_STATUS_CONNECTING;
 
 	bool authen = false;
 	const char *username = mgw_data_get_string(output->context.settings, "username");

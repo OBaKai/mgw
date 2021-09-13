@@ -3,11 +3,13 @@
 #include "util/tlog.h"
 #include "util/threading.h"
 #include "buffer/ring-buffer.h"
-#include "libavformat/avformat.h"
 
 #define FFMPEG_SOURCE	"ffmpeg_source"
 #define LOCAL_SOURCE	"local_source"
 #define PRIVATE_SOURCE	"private_source"
+
+#define MGW_SOURCE_RETRY_SEC	2
+#define MGW_SOURCE_RETRY_MAX	20
 
 extern struct mgw_core *mgw;
 
@@ -15,6 +17,16 @@ static inline bool mgw_source_active(struct mgw_source *source)
 {
 	return source && source->buffer &&
 			os_atomic_load_bool(&source->actived);
+}
+
+static inline bool reconnecting(const struct mgw_source *source)
+{
+    return os_atomic_load_bool(&source->reconnecting);
+}
+
+static inline bool stopping(const struct mgw_source *source)
+{
+    return os_event_try(source->stopping_event) == EAGAIN;
 }
 
 bool mgw_source_is_private(mgw_source_t *source)
@@ -52,7 +64,7 @@ static inline void get_header_internal(mgw_source_t *source,
 {
 	if (source->context.info_impl && !source->is_private) {
 		params->out_size = source->info.get_extra_data(
-						source->context.info_impl, type, &params->out);
+						source->context.info_impl, type, (uint8_t**)&params->out);
 
 	} else if (source->is_private) {
 		if (ENCODER_VIDEO == type) {
@@ -79,14 +91,141 @@ static int get_audio_header(void *source, call_params_t *params)
 	return MGW_ERR_SUCCESS;
 }
 
-static int signal_start(void *source, call_params_t *params)
+static inline int source_proc_handler(mgw_source_t *source,
+					const char *func, call_params_t *params)
 {
-
+	proc_handler_t *procs = mgw_stream_get_procs(source->parent_stream);
+	params->in = bstrdup(source->context.obj_name);
+	params->in_size = strlen(params->in);
+	int ret = proc_handler_do(procs, func, params);
+	bfree(params->in);
+	return ret;
 }
 
-static int signal_stop(void *source, call_params_t *params)
+static int signal_started(void *source, call_params_t *params)
 {
+	return source_proc_handler((mgw_source_t*)source, "signal_started", params);
+}
 
+static void *reconnect_thread(void *param)
+{
+	struct mgw_source *source = param;
+	unsigned long ms = source->reconnect_retry_cur_sec * 1000;
+
+	source->reconnect_thread_active = true;
+	{
+		call_params_t params = {};
+		source_proc_handler(source, "signal_reconnect", &params);
+	}
+
+	if (os_event_timedwait(source->reconnect_stop_event, ms) == ETIMEDOUT)
+		mgw_source_start(source);
+
+	if (os_event_try(source->reconnect_stop_event) == EAGAIN)
+		pthread_detach(source->reconnect_thread);
+	else
+		os_atomic_set_bool(&source->reconnecting, false);
+
+	source->reconnect_thread_active = false;
+	return NULL;
+}
+
+static void *stop_thread(void *arg)
+{
+	mgw_source_t *source = arg;
+	if (!source || stopping(source))
+		return NULL;
+
+	tlog(TLOG_INFO, "stop source:%s internal!\n", source->context.info_id);
+	{
+		call_params_t params = {};
+		source_proc_handler(source, "signal_stop", &params);
+	}
+
+	return NULL;
+}
+
+#define MAX_RETRY_SEC (15 * 60)
+static void source_reconnect(struct mgw_source *source)
+{
+	int ret;
+	if (!reconnecting(source)) {
+		source->reconnect_retry_cur_sec = source->reconnect_retry_sec;
+		source->reconnect_retries = 0;
+	}
+
+	if (source->reconnect_retries >= source->reconnect_retry_max) {
+		source->stop_code = MGW_DISCONNECTED;
+		os_atomic_set_bool(&source->reconnecting, false);
+		if (0 == pthread_create(&source->stop_thread, NULL, stop_thread, source)) {
+			pthread_detach(source->stop_thread);
+		}
+		return;
+	}
+
+	if (!reconnecting(source)) {
+		os_atomic_set_bool(&source->reconnecting, true);
+		os_event_reset(source->reconnect_stop_event);
+	}
+
+	if (source->reconnect_retries) {
+		source->reconnect_retry_cur_sec *= 2;
+		if (source->reconnect_retry_cur_sec > MAX_RETRY_SEC)
+			source->reconnect_retry_cur_sec = MAX_RETRY_SEC;
+	}
+
+	source->reconnect_retries++;
+    source->info.stop(source->context.info_impl);
+
+	source->stop_code = MGW_DISCONNECTED;
+	ret = pthread_create(&source->reconnect_thread, NULL, &reconnect_thread,
+			     source);
+	if (ret < 0) {
+		tlog(TLOG_WARN, "Failed to create reconnect thread");
+		os_atomic_set_bool(&source->reconnecting, false);
+	} else {
+		tlog(TLOG_INFO, "source '%s':  Reconnecting in %d seconds..",
+							source->context.obj_name, source->reconnect_retry_sec);
+		// const char *name = source->context.obj_name;
+		//signal_reconnect(source);
+	}
+}
+
+/**< First time reconnect must be return MGW_OUTPUT_DISCONNECTED value
+ *   and other time do not return MGW_OUTPUT_SUCCESS
+ */
+static inline bool can_reconnect(mgw_source_t *source, int code)
+{
+	bool reconnect_active = source->reconnect_retry_max != 0;
+
+	return (reconnecting(source) && code != MGW_SUCCESS) ||
+	       (reconnect_active && code == MGW_DISCONNECTED);
+}
+
+static int signal_stop(void *opaque, call_params_t *params)
+{
+	mgw_source_t *source = opaque;
+	if (!source || !params || !params->in)
+		return mgw_out_err(MGW_ERR_EPARAM);
+
+	source->stop_code = *((int*)params->in);
+	if (!source->reconnect_retries && source->stop_code != MGW_DISCONNECTED)
+		source->last_error_status = source->stop_code;
+
+	if (can_reconnect(source, source->stop_code)) {
+		source_reconnect(source);
+	} else {
+		if (!reconnecting(source) && mgw_source_active(source)) {
+			if (0 == pthread_create(&source->stop_thread, NULL, stop_thread, source)) {
+				pthread_detach(source->stop_thread);
+			}
+		}
+        os_event_signal(source->stopping_event);
+		os_atomic_set_bool(&source->actived, false);
+        blog(MGW_LOG_INFO, "signal stop source");
+	}
+
+	return 0;
 }
 
 bool mgw_source_init_context(struct mgw_source *source,
@@ -99,7 +238,7 @@ bool mgw_source_init_context(struct mgw_source *source,
 	proc_handler_add(source->context.procs, "get_video_header", get_video_header);
 	proc_handler_add(source->context.procs, "get_audio_header", get_audio_header);
 	proc_handler_add(source->context.procs, "get_encoder_settings", get_encoder_setting);
-	proc_handler_add(source->context.procs, "signal_start", signal_start);
+	proc_handler_add(source->context.procs, "signal_started", signal_started);
 	proc_handler_add(source->context.procs, "signal_stop", signal_stop);
 
 	return true;
@@ -137,6 +276,8 @@ static bool mgw_source_init(struct mgw_source *source)
 {
 	source->control = bzalloc(sizeof(struct mgw_ref));
 	source->control->data = source;
+	source->reconnect_retry_sec = MGW_SOURCE_RETRY_SEC;
+	source->reconnect_retry_max = MGW_SOURCE_RETRY_MAX;
 	
 	if (!source->enabled) {
 		mgw_data_t *buf_settings = mgw_rb_get_default();
@@ -185,6 +326,11 @@ static mgw_source_t *mgw_source_create_internal(
 	const struct mgw_source_info *info = get_source_info(info_id);
 	bool is_private = !strncmp(PRIVATE_SOURCE, info_id, strlen(PRIVATE_SOURCE));
 	source->parent_stream = stream;
+
+	if (0 != os_event_init(&source->stopping_event, OS_EVENT_TYPE_MANUAL))
+		goto failed;
+	if (0 != os_event_init(&source->reconnect_stop_event, OS_EVENT_TYPE_MANUAL))
+		goto failed;
 
 	if (!info) {
 		blog(MGW_LOG_INFO, "Source ID:%s not found! is private source: %d", info_id, is_private);
@@ -305,15 +451,11 @@ void mgw_source_destroy(struct mgw_source *source)
 	}
 	mgw_context_data_free(&source->context);
 
-	if (source->buffer) {
-        struct source_param *param = mgw_rb_get_source_param(source->buffer);
-        bfree(param);
+	if (source->buffer)
 		mgw_rb_destroy(source->buffer);
-	}
 
-	if (source->control) {
+	if (source->control)
 		bfree(source->control);
-	}
 
 	bmem_free(&source->audio_header);
 	bmem_free(&source->video_header);
@@ -343,7 +485,7 @@ void mgw_source_release(mgw_source_t *source)
 mgw_source_t *mgw_source_get_ref(mgw_source_t *source)
 {
 	if (!source) return NULL;
-	mgw_get_ref(source->control) ?
+	return mgw_get_ref(source->control) ?
 		(mgw_source_t*)source->control->data : NULL;
 }
 
@@ -409,8 +551,15 @@ bool mgw_source_start(struct mgw_source *source)
 	}
 
 	os_atomic_set_bool(&source->actived, true);
-	if (source->context.info_impl)
-		source->actived = source->info.start(source->context.info_impl);
+	if (reconnecting(source))
+		os_event_wait(source->stopping_event);
+
+	if (source->context.info_impl) {
+		if ((source->actived = source->info.start(source->context.info_impl))) {
+			call_params_t param = {};
+			source_proc_handler(source, "signal_connecting", &param);
+		}
+	}
 
 	return mgw_source_active(source);
 }

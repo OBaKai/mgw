@@ -9,9 +9,9 @@ proc_handler_t *proc_handler_create(void* opaque)
 	return handler;
 }
 
-static inline proc_info_free(struct call_data *info)
+static inline void proc_info_free(struct call_data *info)
 {
-	bfree(info->name);
+	bfree((void*)info->name);
 	info->cb_proc_func = NULL;
 }
 

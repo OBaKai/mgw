@@ -3,6 +3,7 @@
 
 #include "darray.h"
 
+struct call_params;
 typedef int (*cb_proc)(void*, struct call_params *params);
 
 struct call_data {
@@ -10,19 +11,17 @@ struct call_data {
 	cb_proc		cb_proc_func;
 };
 
-struct proc_handler {
+typedef struct proc_handler {
 	void	*opaque;
 	DARRAY(struct call_data) proc_functions;
-};
-typedef struct proc_handler proc_handler_t;
+}proc_handler_t;
 
-struct call_params {
-	void	*in;
-	size_t	in_size;
-	void	*out;
-	size_t	out_size;
-};
-typedef struct call_params call_params_t;
+typedef struct call_params {
+    void    *in;
+    size_t  in_size;
+    void    *out;
+    size_t  out_size;
+}call_params_t;
 
 proc_handler_t *proc_handler_create(void* opaque);
 void proc_handler_destroy(proc_handler_t *handler);

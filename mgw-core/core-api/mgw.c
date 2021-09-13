@@ -104,7 +104,7 @@ static bool mgw_init_data(void)
 		return false;
 	if (0 != pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE))
 		goto failed;
-	if (0 != pthread_mutex_init(&data->priv_streams_list, &attr))
+	if (0 != pthread_mutex_init(&data->priv_stream_mutex, &attr))
 		goto failed;
 	if (0 != pthread_mutex_init(&data->services_mutex, &attr))
 		goto failed;
@@ -197,7 +197,7 @@ void mgw_device_release_all(mgw_device_t *device_list)
 {
 	mgw_device_t *device = device_list;
 	while (device) {
-		mgw_device_t *next = (mgw_stream_t *)device->context.next;
+		mgw_device_t *next = (mgw_device_t *)device->context.next;
 		mgw_device_release(device);
 		device = next;
 	}
@@ -220,7 +220,6 @@ static void free_mgw_data(void)
 
 void mgw_shutdown(void)
 {
-	struct mgw_core *core = NULL;
 	if (!mgw)
 		return;
 
@@ -234,7 +233,6 @@ void mgw_shutdown(void)
 	mgw_stream_release_all(mgw->data.priv_streams_list);
 	mgw_device_release_all(mgw->data.devices_list);
 	free_mgw_data();
-
 	bfree(mgw);
 }
 
@@ -287,7 +285,7 @@ int mgw_reset_all(void)
 			/** create device */
 			const char *type = mgw_data_get_string(dev, "type");
 			const char *sn = mgw_data_get_string(dev, "sn");
-			mgw_device_t *dev_impl = mgw_device_create(type, sn, dev);
+			mgw_device_t *dev_impl = mgw_device_create(type, sn, dev, NULL);
 			mgw_data_array_t *streams = mgw_data_get_array(dev, "streams");
 			if (streams) {
 				size_t streams_cnt = mgw_data_array_count(streams);

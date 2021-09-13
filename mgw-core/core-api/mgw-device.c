@@ -3,6 +3,13 @@
 
 extern struct mgw_core *mgw;
 
+void mgw_device_proc_cb_handle(mgw_device_t *device,
+            int type, int status, void *data, size_t size)
+{
+    if (device && device->proc_cb_handle)
+        device->proc_cb_handle(type, status, data, size);
+}
+
 static void mgw_device_destroy(mgw_device_t *device)
 {
     if (device->stream_list)
@@ -14,11 +21,14 @@ static void mgw_device_destroy(mgw_device_t *device)
     bfree(device);
 }
 
-mgw_device_t *mgw_device_create(const char *type, const char *sn, mgw_data_t *settings)
+mgw_device_t *mgw_device_create(const char *type, const char *sn,
+            mgw_data_t *settings, cb_handle_t status_cb)
 {
     if (!sn || !settings) return NULL;
 
     mgw_device_t *device = bzalloc(sizeof(struct mgw_device));
+    device->proc_cb_handle = status_cb;
+
     if (0 != pthread_mutex_init(&device->stream_mutex, NULL))
         goto error;
 
@@ -168,14 +178,32 @@ int mgw_device_addstream_with_source(mgw_device_t *device, mgw_data_t *stream_se
 int mgw_device_add_output_to_stream(mgw_device_t *device,
 			const char *stream_name, mgw_data_t *output_info)
 {
+    if (!device || !stream_name || !output_info)
+        return mgw_dev_err(MGW_ERR_EPARAM);
 
+    mgw_stream_t *stream = NULL;
+    if (!(stream = mgw_get_weak_stream_by_name(device->stream_list,
+                            &device->stream_mutex, stream_name))) {
+        tlog(TLOG_ERROR, "Counldn't find stream[%s]", stream_name);
+        return mgw_dev_err(MGW_ERR_NOT_EXIST);
+    }
+
+    return mgw_stream_add_output(stream, output_info);
 }
 
 /**< Release output stream from default stream if stream_name is NULL */
 void mgw_device_release_output_from_stream(mgw_device_t *device,
 			const char *stream_name, mgw_data_t *output_info)
 {
+    if (!device || !stream_name || !output_info)
+        return;
 
+    mgw_stream_t *stream = NULL;
+    if ((stream = mgw_get_weak_stream_by_name(device->stream_list,
+                            &device->stream_mutex, stream_name))) {
+        const char *output_name = mgw_data_get_string(output_info, "output_name");
+        mgw_stream_release_output_by_name(stream, output_name);
+    }
 }
 
 bool mgw_device_send_packet(mgw_device_t *device,

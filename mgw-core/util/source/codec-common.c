@@ -331,13 +331,13 @@ static void get_avc_sps_pps(const uint8_t *data, size_t size,
 	}
 }
 
-static void get_hevc_vps_sps_pps(const uint8_t *data, size_t size,
-        const uint8_t **vps, size_t vps_size,
-        const uint8_t **sps, size_t sps_size,
-        const uint8_t **pps, size_t pps_size)
-{
+// static void get_hevc_vps_sps_pps(const uint8_t *data, size_t size,
+//         const uint8_t **vps, size_t vps_size,
+//         const uint8_t **sps, size_t sps_size,
+//         const uint8_t **pps, size_t pps_size)
+// {
 
-}
+// }
 
 /** ISO/IEC 14496-15:2017  5.3.3.1.2 Syntax AVCDecorderConfigurationRecord */
 size_t mgw_parse_avc_header(uint8_t **header, uint8_t *data, size_t size)

@@ -311,9 +311,12 @@ static void *connect_and_send_thread(void *arg)
 	if ((ret = init_connect(stream)) != MGW_SUCCESS) {
 		tlog(TLOG_ERROR, "Tried to connect srt failed, ret[%d]", ret);
 		goto error;
+	} else {
+		call_params_t param = {};
+		do_output_proc_handler(stream, "signal_started", &param);
 	}
-	os_atomic_set_bool(&stream->active, true);
 
+	os_atomic_set_bool(&stream->active, true);
 	os_set_thread_name("srt-stream: connect and send thread");
 	while(active(stream)) {
 		if (stopping(stream) || disconnected(stream))

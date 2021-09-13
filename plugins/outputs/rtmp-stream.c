@@ -370,7 +370,6 @@ static bool send_meta_data(struct rtmp_stream *stream, size_t idx)
 static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 		bool *next, int64_t ts)
 {
-	mgw_output_t  *context  = stream->output;
 	call_params_t params = {};
 	char header[8] = {0xaf, 0x00};
 	struct encoder_packet packet   = {
@@ -404,7 +403,6 @@ static bool send_audio_header(struct rtmp_stream *stream, size_t idx,
 
 static bool send_video_header(struct rtmp_stream *stream, int64_t ts)
 {
-	mgw_output_t  *context  = stream->output;
 	call_params_t params = {};
 	struct encoder_packet packet   = {
 		.type         = ENCODER_VIDEO,
@@ -594,7 +592,10 @@ static int init_send(struct rtmp_stream *stream)
         blog(MGW_LOG_ERROR, "Failed to create send thread!");
         os_atomic_set_bool(&stream->active, false);
         return MGW_ERROR;
-    }
+    } else {
+		call_params_t param = {};
+		do_output_proc_handler(stream, "signal_started", &param);
+	}
 
     return MGW_SUCCESS;
 }
@@ -734,7 +735,6 @@ static void *connect_thread(void *data)
     if ((ret = try_connect(stream)) != MGW_SUCCESS) {
 		tlog(TLOG_ERROR, "Connect to %s failed: %d\n", stream->path.array, ret);
 		do_output_proc_handler(stream, "signal_stop", &params);
-        // stream->output->signal_stop(stream->output, ret);
     }
 
     if (!stopping(stream))

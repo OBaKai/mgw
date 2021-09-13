@@ -183,7 +183,8 @@ bool mgw_stream_send_packet(mgw_stream_t *stream, struct encoder_packet *packet)
 /***********************************
  * Device operations
  **********************************/
-mgw_device_t *mgw_device_create(const char *type, const char *sn, mgw_data_t *settings);
+mgw_device_t *mgw_device_create(const char *type, const char *sn,
+			mgw_data_t *settings, cb_handle_t status_cb);
 
 void mgw_device_addref(mgw_device_t *device);
 void mgw_device_release(mgw_device_t *device);
@@ -211,7 +212,8 @@ void mgw_device_release_output_from_stream(mgw_device_t *device,
 bool mgw_device_send_packet(mgw_device_t *device,
 						const char *stream_name,
 						struct encoder_packet *packet);
-
+void mgw_device_proc_cb_handle(mgw_device_t *device,
+            int type, int status, void *data, size_t size);
 
 int mgw_reset_streams(mgw_device_t *device, mgw_data_t *stream_settings);
 int mgw_reset_all(void);

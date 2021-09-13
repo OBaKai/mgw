@@ -107,6 +107,22 @@ static inline int do_proc_handler(struct ffmpeg_source *s,
 	return proc_handler_do(handler, name, params);
 }
 
+static inline void free_ffmpeg_media(struct ffmpeg_source *s)
+{
+	if (s->vbsf_ctx) {
+		av_bsf_free(&s->vbsf_ctx);
+		s->vbsf_ctx = NULL;
+	}
+	if (s->fmt_ctx) {
+		avformat_close_input(&s->fmt_ctx);
+		s->fmt_ctx = NULL;
+	}
+	if (s->sws_ctx) {
+		sws_freeContext(s->sws_ctx);
+		s->sws_ctx = NULL;
+	}
+}
+
 static void ffmpeg_source_destroy(void *data)
 {
 	struct ffmpeg_source *s = data;
@@ -117,11 +133,6 @@ static void ffmpeg_source_destroy(void *data)
 		os_atomic_set_bool(&s->actived, false);
 		pthread_join(s->receive_thread, NULL);
 	}
-
-	av_bsf_free(&s->vbsf_ctx);
-	avformat_close_input(&s->fmt_ctx);
-	if (s->sws_ctx)
-		sws_freeContext(s->sws_ctx);
 
 	os_event_destroy(s->stop_event);
 	os_event_destroy(s->continue_read_event);
@@ -152,7 +163,6 @@ static int ffmpeg_interrupt_callback(void *opaque)
 static int create_ffmpeg_media(struct ffmpeg_source *s, const char *uri)
 {
 	int ret = 0;
-
 	if ((ret = avformat_open_input(&s->fmt_ctx, uri, NULL, NULL)))
 		goto error;
 	if ((ret = avformat_find_stream_info(s->fmt_ctx, NULL)))
@@ -197,7 +207,7 @@ static int create_ffmpeg_media(struct ffmpeg_source *s, const char *uri)
 	}
 
 	if (s->save_to_file && !s->video_file) {
-		char *filename[32] = {};
+		char filename[32] = {};
 		snprintf(filename, sizeof(filename), "video_source.%s", v_ext);
 		s->video_file = fopen(filename, "wb+");
 	}
@@ -219,7 +229,6 @@ error:
 
 static void *ffmpeg_source_create(mgw_data_t *setting, mgw_source_t *source)
 {
-	int ret;
 	if (!setting || !source)
 		return NULL;
 
@@ -257,12 +266,15 @@ static void *read_thread(void *arg)
 	struct ffmpeg_source *s = arg;
 	AVPacket pkt = {}, bsf_pkt = {};
 	int ret;
-	char *audio_buffer = bzalloc(AAC_SAMPLE_SIZE_MAX);
+	uint8_t *audio_buffer = bzalloc(AAC_SAMPLE_SIZE_MAX);
 	uint32_t frame_cnt = 0;
 
-	if (0 != create_ffmpeg_media(s, s->uri.array)) {
+	if (0 != (ret = create_ffmpeg_media(s, s->uri.array))) {
 		tlog(TLOG_ERROR, "Open uri:%s failed, error:%s", s->uri.array, av_err2str(ret));
 		goto error;
+	} else {
+		call_params_t param = {};
+		do_proc_handler(s, "signal_started", &param);
 	}
 
 	os_set_thread_name("ffmpeg-source: read thread");
@@ -344,6 +356,7 @@ error:
 	do_proc_handler(s, "signal_stop", &params);
 
 	bfree(audio_buffer);
+	free_ffmpeg_media(s);
 	os_atomic_set_long(&s->error_read, 0);
 	os_event_reset(s->stop_event);
 	os_event_reset(s->continue_read_event);
@@ -365,8 +378,7 @@ static bool ffmpeg_source_start(void *data)
 static void ffmpeg_source_stop(void *data)
 {
 	struct ffmpeg_source *s = data;
-	if (!ffmpeg_source_valid(s) ||
-		stopping(s))
+	if (!ffmpeg_source_valid(s) || stopping(s))
 		return;
 
 	if (actived(s)) {

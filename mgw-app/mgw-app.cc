@@ -74,11 +74,14 @@ int MGWApp::StartOutputStream(mgw_data_t *settings, mgw_data_t **result)
 	const char *dev_type = mgw_data_get_string(dev_info, "type");
 
     if (!(device = mgw_get_weak_device_by_name(dev_sn)))
-		device = mgw_device_create(dev_type, dev_sn, dev_info);
+		device = mgw_device_create(dev_type, dev_sn, dev_info, NULL);
 
     if (device && !mgw_device_has_stream(device)) {
-		int stream_channel = mgw_data_get_int(output_info, "src_channel");
-		std::string stream_name = "stream" + std::to_string(stream_channel);
+		int src_channel = mgw_data_get_int(output_info, "src_channel");
+		int out_channel = mgw_data_get_int(output_info, "out_channel");
+		std::string stream_name = "stream" + std::to_string(src_channel);
+		std::string output_name = "output" + std::to_string(out_channel);
+		mgw_data_set_string(output_info, "output_name", output_name.data());
 
 		mgw_data_t *stream_settings = mgw_data_create();
 		mgw_data_array_t *outputs = mgw_data_array_create();
@@ -125,8 +128,14 @@ void MGWApp::StopOutputStream(mgw_data_t *settings)
 
 	mgw_device_t *device = NULL;
 	const char *dev_sn = mgw_data_get_string(dev_info, "sn");
+	int src_channel = mgw_data_get_int(output_info, "src_channel");
+	int out_channel = mgw_data_get_int(output_info, "out_channel");
+	std::string stream_name = "stream" + std::to_string(src_channel);
+	std::string output_name = "output" + std::to_string(out_channel);
+	mgw_data_set_string(output_info, "output_name", output_name.data());
+
 	if ((device = mgw_get_weak_device_by_name(dev_sn)))
-		mgw_device_release_output_from_stream(device, NULL, output_info);
+		mgw_device_release_output_from_stream(device, stream_name.data(), output_info);
 
 	if (dev_info)
 		mgw_data_release(dev_info);
@@ -151,6 +160,8 @@ int MGWApp::StartSourceStream(mgw_data_t *settings, mgw_data_t **result)
 	if (!mgw_device_has_stream(device)) {
 		int channel = mgw_data_get_int(source_info, "src_channel");
 		std::string stream_name = "stream" + std::to_string(channel);
+		std::string source_name = "source" + std::to_string(channel);
+		mgw_data_set_string(source_info, "source_name", source_name.data());
 
 		mgw_data_t *stream_info = mgw_data_create();
 		mgw_data_set_string(stream_info, "name", stream_name.data());
@@ -190,11 +201,13 @@ void MGWApp::StopSourceStream(mgw_data_t *settings)
 int MGWApp::GetOutputStreamInfo(mgw_data_t *settings, mgw_data_t **result)
 {
 
+	return 0;
 }
 
 int MGWApp::GetSourceStreamInfo(mgw_data_t *settings, mgw_data_t **result)
 {
 
+	return 0;
 }
 
 static void show_usage(void)
@@ -315,7 +328,6 @@ int main(int argc, char *argv[])
 	MGWEvents e;
 	int code = events_loop(e);
 
-error:
 	bfree((void *)exec_path);
 	bfree((void*)process_name);
 	tlog(TLOG_DEBUG, "------------  mgw shutdown code(%d) ------------", code);
